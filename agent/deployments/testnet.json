@@ -1,0 +1,11 @@
+{
+  "network": "testnet",
+  "root": "ballast-11012319.testnet",
+  "stakingContract": "stake.ballast-11012319.testnet",
+  "aiValidator": "pool-ai.ballast-11012319.testnet",
+  "yieldPool": "pool-yield.ballast-11012319.testnet",
+  "vault": "vault.ballast-11012319.testnet",
+  "productId": "prod_6TSXAT9FNIPqAs",
+  "priceId": "price_3XvBcJ5KmMwAwgynNFfo9HIH",
+  "farmRewardRate": "3802570537683474"
+}
