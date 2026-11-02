@@ -1,12 +1,14 @@
 // Ballast dashboard. Two sources behind one screen:
 //   demo  — a 100,000 NEAR vault simulated in the browser with VaultSim (the agent's own policy code),
 //           so the budget, guard rails and approvals all respond live;
-//   live  — a real vault on NEAR testnet, read with the RPC `get_state` view. Read-only: moves are shown
-//           with the exact owner command to approve them.
+//   live  — a real vault on NEAR testnet, read with the RPC `get_state` view. Signed in with a NEAR wallet as
+//           the vault's owner, you approve moves, change guard rails, deposit, exit and withdraw from here;
+//           otherwise it is read-only and shows the owner's command line instead.
 import { defaultScenario } from "./lib/sim.js";
 import { VaultSim } from "./lib/vault-sim.js";
 import { nextAction, creditRateFromFarm } from "./lib/policy.js";
 import { viewVault, yoctoToNear, explorerUrl, TESTNET } from "./lib/near.js";
+import * as wallet from "./lib/wallet.js";
 
 const $ = id => document.getElementById(id);
 const fmtNear = v => (v === 0 ? "0" : Math.abs(v) >= 1000 ? Math.round(v).toLocaleString("en-US") : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(3));
@@ -22,7 +24,11 @@ const App = {
   sc: null, sim: null, compare: null,
   playing: false, speed: 16, clock: 0, lastFrame: 0, dirty: true,
   live: null, liveTimer: 0,
+  account: null, // signed-in NEAR account, if any
+  confirm: null, // an owner action waiting for its second click
 };
+const ONE_YOCTO = "1";
+const txUrl = h => `${TESTNET.explorer}/txns/${h}`;
 
 // ================================================================ login
 function session(v) {
@@ -59,6 +65,7 @@ $("watch").addEventListener("submit", async e => {
 });
 $("logout").addEventListener("click", () => {
   session(null);
+  if (App.account) { wallet.signOut().catch(() => {}); App.account = null; }
   App.playing = false;
   clearInterval(App.liveTimer);
   App.mode = null;
@@ -79,6 +86,115 @@ function showDash() {
   $("budget-range").hidden = App.mode !== "demo";
   document.querySelector(".mode").hidden = App.mode !== "demo";
   for (const id of ["chart-usage", "chart-stake"]) $(id).previousElementSibling.hidden = App.mode !== "demo";
+  renderWho();
+}
+
+// ================================================================ wallet
+const isOwner = () => App.mode === "live" && !!App.account && App.account === App.live.state.owner_id;
+function renderWho() {
+  const who = $("who");
+  if (!App.account) { who.innerHTML = App.mode === "live" ? `<button class="link" id="who-connect" type="button">connect wallet</button>` : ""; }
+  else who.innerHTML = `<b>${escapeHtml(App.account)}</b>${App.mode === "live" ? (isOwner() ? " · owner" : " · not the owner") : ""}`;
+  $("who-connect")?.addEventListener("click", openWallets);
+}
+$("connect").addEventListener("click", openWallets);
+async function openWallets() {
+  const dlg = $("wallets"), list = $("wallet-list");
+  list.innerHTML = `<li class="muted">Loading wallets…</li>`;
+  if (!dlg.open) dlg.showModal();
+  try {
+    const ws = await wallet.wallets();
+    list.innerHTML = "";
+    for (const w of ws) {
+      const li = document.createElement("li"), b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = `${w.icon ? `<img src="${escapeHtml(w.icon)}" alt="">` : ""}<span>${escapeHtml(w.name)}</span><span class="muted">${w.available ? "" : "not installed"}</span>`;
+      b.addEventListener("click", async () => {
+        b.disabled = true;
+        b.querySelector(".muted").textContent = "opening…";
+        try {
+          const acc = await wallet.signIn(w.id);
+          dlg.close();
+          if (acc) await afterSignIn(acc);
+        } catch (x) {
+          b.disabled = false;
+          b.querySelector(".muted").textContent = wallet.explain(x);
+        }
+      });
+      li.append(b);
+      list.append(li);
+    }
+  } catch (x) {
+    list.innerHTML = `<li class="error">Couldn't load wallets: ${escapeHtml(x.message)}</li>`;
+  }
+}
+dialogClickOutside($("wallets"));
+function dialogClickOutside(d) { d.addEventListener("click", e => { if (e.target === d) d.close(); }); }
+
+/** Signed in: open the account's vault if it has one, else say so on the login card. */
+async function afterSignIn(acc) {
+  App.account = acc;
+  if (App.mode === "live") { App.dirty = true; renderWho(); return; }
+  const id = acc.startsWith("vault.") ? acc : `vault.${acc}`;
+  try {
+    enterLive(id, await viewVault(id));
+  } catch {
+    const err = $("connect-error");
+    err.innerHTML = `Signed in as <b>${escapeHtml(acc)}</b>, but there is no Ballast vault at <code>${escapeHtml(id)}</code> on testnet yet. Watch any vault below, or open the demo.`;
+    err.hidden = false;
+  }
+}
+
+/** Sign and send one owner call, with progress and the result in the owner note. */
+async function act(label, method, args, { gasTgas = 30, deposit = ONE_YOCTO } = {}) {
+  const note = $("owner-note");
+  App.confirm = null;
+  App.dirty = true;
+  note.textContent = `${label}: waiting for your wallet…`;
+  try { sessionStorage.setItem("ballast:pending", label); } catch { /* only for the redirect message */ }
+  try {
+    const out = await wallet.call(App.live.id, method, args, { gasTgas, deposit });
+    const hash = out?.transaction?.hash || out?.transaction_outcome?.id;
+    note.innerHTML = `${escapeHtml(label)}: done${hash ? ` · <a href="${txUrl(hash)}" target="_blank" rel="noopener">transaction ↗</a>` : ""}`;
+    try { sessionStorage.removeItem("ballast:pending"); } catch { /* fine */ }
+    await refreshLive();
+  } catch (x) {
+    note.textContent = `${label}: ${wallet.explain(x)}`;
+  }
+  App.dirty = true;
+}
+/** Two-click confirmation for actions that move money out or unwind the vault. */
+function confirmThen(btn, key, label, fn) {
+  if (App.confirm === key) return fn();
+  App.confirm = key;
+  btn.textContent = `Confirm: ${label}?`;
+  btn.classList.add("confirm");
+  setTimeout(() => { if (App.confirm === key) { App.confirm = null; App.dirty = true; } }, 4000);
+}
+$("deposit").addEventListener("click", () => {
+  const amt = Math.max(0, +$("deposit-amt").value || 0);
+  if (amt > 0) act(`Deposit ${amt} NEAR`, "deposit", {}, { deposit: nearToYocto(amt) });
+});
+$("exit").addEventListener("click", e => {
+  const s = App.live.state;
+  if (s.exiting) act("Cancel exit", "cancel_exit", {});
+  else confirmThen(e.currentTarget, "exit", "unwind both sides", () => act("Exit", "exit", {}));
+});
+$("withdraw").addEventListener("click", e => {
+  const liquid = yoctoToNear(App.live.state.liquid);
+  confirmThen(e.currentTarget, "withdraw", `withdraw ${fmtNear(liquid)} NEAR to ${App.live.state.owner_id}`, () => act(`Withdraw ${fmtNear(liquid)} NEAR`, "withdraw", { amount: null }));
+});
+$("save-policy").addEventListener("click", () => {
+  const p = { ...App.live.state.policy, max_ai_bps: Math.round(App.maxAi * 10000), buffer_days: App.buffer };
+  if ("budget_micro_usd_week" in p) p.budget_micro_usd_week = String(Math.round(App.budget * 1e6));
+  if (p.min_ai_bps > p.max_ai_bps) p.min_ai_bps = p.max_ai_bps;
+  act("Save guard rails", "set_policy", { policy: p });
+});
+function policyDirty() {
+  if (App.mode !== "live") return false;
+  const p = App.live.state.policy;
+  return Math.round(App.maxAi * 10000) !== p.max_ai_bps || App.buffer !== p.buffer_days ||
+    ("budget_micro_usd_week" in p && Math.round(App.budget * 1e6) !== Number(p.budget_micro_usd_week));
 }
 
 // ================================================================ demo vault
@@ -191,6 +307,14 @@ async function enterLive(id, state) {
   if (burn > 0) { App.budget = +(burn * 7).toPrecision(2); $("budget").value = App.budget; $("budget").step = "any"; }
   session({ mode: "live", id });
   App.live = { id, state, read: new Date() };
+  // guard rails start from what the vault has stored
+  App.maxAi = state.policy.max_ai_bps / 10000;
+  App.buffer = state.policy.buffer_days;
+  $("max-ai").value = Math.round(App.maxAi * 100); $("max-out").textContent = Math.round(App.maxAi * 100) + "%";
+  $("buffer").value = App.buffer; $("buf-out").textContent = App.buffer + (App.buffer === 1 ? " day" : " days");
+  if (state.policy.budget_micro_usd_week != null && Number(state.policy.budget_micro_usd_week) > 0) {
+    App.budget = Number(state.policy.budget_micro_usd_week) / 1e6; $("budget").value = App.budget;
+  }
   $("vault-name").textContent = id;
   $("mode-chip").textContent = "testnet · live";
   $("mode-chip").className = "chip live";
@@ -201,7 +325,7 @@ async function enterLive(id, state) {
   render();
 }
 async function refreshLive() {
-  if (App.mode !== "live") return;
+  if (App.mode !== "live" || !App.live) return;
   try { App.live.state = await viewVault(App.live.id); App.live.read = new Date(); App.live.error = null; }
   catch (x) { App.live.error = x.message; }
   App.dirty = true;
@@ -456,15 +580,25 @@ function renderLive() {
   const a = s.exiting ? null : nextAction(m.books, m.target); // same thresholds as the live agent
   const el = $("approvals");
   if (a) {
-    const arg = a.kind === "WithdrawAi" ? '"WithdrawAi"' : `{"${a.kind}":{"amount":"${nearToYocto(a.amount)}"}}`;
-    const gas = a.kind.endsWith("Ai") ? "450" : "150";
-    const cmd = `near call ${L.id} step '{"action":${arg}}' --accountId ${s.owner_id} --gas ${gas}000000000000`;
-    el.innerHTML = `<div class="proposal"><div class="what">${KIND_LABEL[a.kind] || a.kind}${a.amount ? `: ${fmtNear(a.amount)} NEAR` : ""}</div>
+    const actionArg = a.kind === "WithdrawAi" ? "WithdrawAi" : { [a.kind]: { amount: nearToYocto(a.amount) } };
+    const gas = a.kind.endsWith("Ai") ? 450 : 150;
+    const cmd = `near call ${L.id} step '${JSON.stringify({ action: actionArg })}' --accountId ${s.owner_id} --gas ${gas}000000000000`;
+    const label = `${KIND_LABEL[a.kind] || a.kind}${a.amount ? `: ${fmtNear(a.amount)} NEAR` : ""}`;
+    const owner = isOwner();
+    el.innerHTML = `<div class="proposal"><div class="what">${label}</div>
       <div class="why">Next step toward the target of ${fmtNear(m.target)} NEAR on NEAR AI. ${m.report ? escapeHtml(m.report.reason) + "." : ""}</div>
-      <div>The agent takes this step on its next tick. To approve it yourself, sign as the owner:</div>
-      <pre>${escapeHtml(cmd)}</pre>
-      <div class="actions"><button class="button ghost" id="copy-cmd">Copy command</button><a class="link" href="${explorerUrl(L.id)}" target="_blank" rel="noopener">vault on explorer ↗</a></div></div>`;
-    $("copy-cmd").onclick = () => navigator.clipboard?.writeText(cmd).then(() => { $("copy-cmd").textContent = "Copied"; });
+      ${owner
+        ? `<div>The agent takes this step on its next tick, or you can approve it now.</div>
+           <div class="actions"><button class="button" id="approve-step" ${s.busy ? "disabled" : ""}>Approve in wallet</button><button class="link" id="show-cmd">or use the CLI</button></div>
+           <pre id="cmd" hidden>${escapeHtml(cmd)}</pre>`
+        : `<div>${App.account ? `Signed in as ${escapeHtml(App.account)}; only the owner, ${escapeHtml(s.owner_id)}, can approve.` : "The agent takes this step on its next tick. The owner can approve it now by connecting their wallet, or with:"}</div>
+           <pre>${escapeHtml(cmd)}</pre>
+           <div class="actions">${App.account ? "" : `<button class="button" id="owner-connect">Connect wallet</button>`}<button class="button ghost" id="copy-cmd">Copy command</button></div>`}
+      </div>`;
+    $("approve-step")?.addEventListener("click", () => act(`Approve: ${label}`, "step", { action: actionArg }, { gasTgas: gas, deposit: "0" }));
+    $("show-cmd")?.addEventListener("click", () => { $("cmd").hidden = false; });
+    $("owner-connect")?.addEventListener("click", openWallets);
+    $("copy-cmd")?.addEventListener("click", () => navigator.clipboard?.writeText(cmd).then(() => { $("copy-cmd").textContent = "Copied"; }));
   } else {
     const unbonding = m.books.aiUnstaking + m.books.yieldUnstaking;
     el.innerHTML = unbonding > 0.01
@@ -492,11 +626,31 @@ function renderLive() {
   $("fc-note").textContent = slope >= 0 ? "credits growing at this stake" : `at this stake, dry in ${(m.credits / (-slope * 24)).toFixed(1)} days`;
   for (const id of ["chart-usage", "chart-stake"]) { $(id).innerHTML = ""; $(id).previousElementSibling.hidden = true; }
 
+  renderOwner(m, s);
+
   postView({
     ai: m.ai, yield: m.yld, crateNear: m.total / 20,
     flights: m.flight > 0.01 ? [{ amount: m.flight, dest: m.target > m.ai ? "ai" : "yield", progress: 0.5 }] : [],
     tank: m.credits / Math.max(1e-9, buf * 2), throttled: m.credits <= 0 && m.burn > 0, demand: 1,
   });
+}
+
+function renderOwner(m, s) {
+  const owner = isOwner();
+  $("owner").hidden = !owner;
+  $("rails-save").hidden = !owner;
+  renderWho();
+  const hasBudget = "budget_micro_usd_week" in s.policy;
+  if (!owner) return;
+  if (!App.railsOpened) { App.railsOpened = true; document.querySelector("details.rails").open = true; }
+  const dirty = policyDirty();
+  $("save-policy").disabled = !dirty;
+  if (!$("save-note").dataset.busy) $("save-note").textContent = dirty ? "unsaved changes" : hasBudget ? "budget and guard rails match the vault" : "guard rails match the vault · the budget is set in the agent's config until the vault upgrade";
+  const ex = $("exit"), wd = $("withdraw");
+  if (App.confirm !== "exit") { ex.textContent = s.exiting ? "Cancel exit" : "Exit: unwind both sides"; ex.classList.remove("confirm"); }
+  const liquid = m.liquid;
+  if (App.confirm !== "withdraw") { wd.textContent = `Withdraw ${fmtNear(liquid)} NEAR`; wd.classList.remove("confirm"); }
+  wd.disabled = liquid < 0.01;
 }
 
 // ================================================================ helpers
@@ -526,6 +680,26 @@ setInterval(() => {
 // restore the session on reload
 const saved = session();
 const q = new URLSearchParams(location.search);
+// coming back from a browser wallet: a signed transaction, a cancelled one, or a sign-in
+const pendingLabel = (() => { try { return sessionStorage.getItem("ballast:pending"); } catch { return null; } })();
+if (q.has("transactionHashes") || q.has("errorCode")) {
+  const hash = (q.get("transactionHashes") || "").split(",")[0];
+  const label = pendingLabel || "Transaction";
+  setTimeout(() => {
+    $("owner-note").innerHTML = hash ? `${escapeHtml(label)}: sent · <a href="${txUrl(hash)}" target="_blank" rel="noopener">transaction ↗</a>` : `${escapeHtml(label)}: ${q.get("errorCode") === "userRejected" ? "you cancelled it in the wallet" : escapeHtml(q.get("errorMessage") || q.get("errorCode"))}`;
+  }, 0);
+  try { sessionStorage.removeItem("ballast:pending"); } catch { /* fine */ }
+}
+if (wallet.probablySignedIn()) {
+  wallet.accountId().then(acc => {
+    if (!acc) return;
+    App.account = acc;
+    if (App.mode) { App.dirty = true; renderWho(); }
+    else if (!saved) afterSignIn(acc);
+  }).catch(() => {});
+}
+for (const k of ["transactionHashes", "errorCode", "errorMessage", "account_id", "all_keys", "public_key"]) q.delete(k);
+history.replaceState(null, "", "app.html" + (q.toString() ? "?" + q : ""));
 if (q.get("vault")) { $("vault-id").value = q.get("vault"); $("watch").requestSubmit(); }
 else if (q.has("demo") || saved?.mode === "demo") enterDemo();
 else if (saved?.mode === "live" && saved.id) { $("vault-id").value = saved.id; $("watch").requestSubmit(); }
