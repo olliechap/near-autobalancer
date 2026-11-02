@@ -1,0 +1,19 @@
+{
+  "name": "ballast-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Ballast agent: rebalances a vault between NEAR AI inference staking and ordinary staking",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "simulate": "node src/simulate.ts",
+    "deploy:testnet": "node scripts/deploy-testnet.ts",
+    "agent": "node src/agent.ts",
+    "status": "node scripts/status.ts"
+  },
+  "dependencies": {
+    "near-api-js": "5.1.1"
+  }
+}
