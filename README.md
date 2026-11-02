@@ -129,13 +129,16 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
 
 * **Vault on a contract sub-account stakes into NEAR AI's farm** (the concept's day-1 risk, testnet side):
   rebalance + `StakeAi` 7 NEAR, then `StakeYield` 4.5 NEAR; the farm position accrues reward units.
-* **Agent tick**: forecast burn needed 9.3 NEAR on the AI side, so the agent set the target and sent
-  `UnstakeYield` 1.843 NEAR to fund it once it unbonds.
+* **Agent moves yield to AI across an epoch**: forecast burn needed 9.3 NEAR on the AI side, so the agent set the
+  target and sent `UnstakeYield` 1.843 NEAR. After the epoch it sent `WithdrawYield` 1.843 and `StakeAi` 1.707,
+  taking the AI side from 7 to 8.707 NEAR; the remaining 0.6 NEAR gap is inside the churn band.
 * **Trust**:
   * agent key calls `withdraw` → rejected by the protocol (`MethodNameMismatch`);
   * agent key sets the AI target to 99% → rejected by the vault (`outside the policy band 0..9000bps`);
   * a stranger calls `step` → rejected by the vault (`agent or owner only`).
-* **Exit**: the owner called `exit`; a stranger account then unstaked both sides of the vault.
+* **Full exit** on `vault-exit`: the owner called `exit`; a stranger account unstaked both sides; after the epoch
+  the stranger withdrew 1.5 NEAR from NEAR AI's staking contract (`withdraw(validator_id)`) and 0.5 NEAR from the
+  yield pool; the owner then withdrew 2.304 NEAR to their own account.
 
 ## Limits, said plainly
 
@@ -145,8 +148,10 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
 * The yield side is our test pool, not a live validator or liquid staking token. Swapping a LiNEAR position for
   instant top-ups is a stretch goal.
 * No one-off credit purchase in the emergency path yet; the agent flags emergencies and adds stake.
-* While a transaction runs, the vault's balance excludes the gas prepaid for it, so a target's share is computed on
-  a total that is briefly a little low. It errs toward a lower share.
+* The agent signs as the vault, so the gas it prepays (about 0.5 NEAR for a 450 Tgas staking call, charged up front
+  at a pessimistic price and mostly refunded) leaves the vault's balance while the call runs. The agent keeps
+  0.6 NEAR of headroom when staking (`GAS_HEADROOM_NEAR`), and a target's share is computed on a total that is
+  briefly a little low, which errs toward a lower share.
 * The agent's function-call key has a 1 NEAR gas allowance; the owner re-adds the key when it runs out.
 
 ## Repository
