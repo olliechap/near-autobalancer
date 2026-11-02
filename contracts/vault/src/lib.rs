@@ -169,6 +169,9 @@ pub struct Vault {
     topup_total: u128,
 }
 
+/// Upper bound on the per-gas price the runtime holds for prepaid gas (testnet: 450 Tgas held ~0.45 NEAR).
+const PESSIMISTIC_GAS_PRICE_YOCTO: u128 = 1_000_000_000;
+
 const TOPUP_WINDOW_NS: u64 = 30 * 24 * 3600 * 1_000_000_000;
 
 #[near]
@@ -342,7 +345,7 @@ impl Vault {
     ) -> PromiseOrValue<()> {
         self.assert_agent();
         require!(!self.exiting, "vault is exiting");
-        let total = self.total();
+        let total = self.total_in_call();
         let target_bps = bps_of(target_ai.0, total);
         require!(
             target_bps >= self.policy.min_ai_bps && target_bps <= self.policy.max_ai_bps,
@@ -516,6 +519,24 @@ impl Vault {
         self.liquid() + self.ai_staked + self.ai_unstaking + self.yield_staked + self.yield_unstaking
     }
 
+    /// Liquid NEAR as seen from inside a call. When the agent signs with the vault's own function-call key, the
+    /// runtime has already taken this call's prepaid gas from the balance, at a pessimistic gas price, and refunds
+    /// the unused part afterwards. Count that held amount (bounded by half the reserve) as liquid, so the vault's
+    /// checks see the balance it will have once the refund lands. Only for change calls: views cannot read the
+    /// signer.
+    fn liquid_in_call(&self) -> u128 {
+        let float = if env::signer_account_id() == env::current_account_id() {
+            (env::prepaid_gas().as_gas() as u128 * PESSIMISTIC_GAS_PRICE_YOCTO).min(self.reserve / 2)
+        } else {
+            0
+        };
+        self.liquid() + float
+    }
+
+    fn total_in_call(&self) -> u128 {
+        self.liquid_in_call() + self.ai_staked + self.ai_unstaking + self.yield_staked + self.yield_unstaking
+    }
+
     /// Yield earned since tracking began: current yield-side value above the net NEAR moved in.
     fn yield_earned(&self) -> u128 {
         let value = (self.yield_staked + self.yield_unstaking) as i128;
@@ -548,9 +569,9 @@ impl Vault {
     /// so the agent can stall, but not drain or redirect, the vault.
     fn internal_step(&mut self, action: Action) -> Promise {
         require!(!self.busy, "vault is busy");
-        let liquid = self.liquid();
+        let liquid = self.liquid_in_call();
         let desired_ai = self.desired_ai();
-        let total = self.total();
+        let total = self.total_in_call();
         let desired_yield = if self.exiting { 0 } else { total.saturating_sub(desired_ai) };
         let action_for_cb = action.clone();
         let p = match action {
