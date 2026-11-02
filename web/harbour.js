@@ -156,18 +156,58 @@ function drawTank() {
   for (let k = 0; k <= 1; k += 0.01) plot(lerp(TANK.x, LIGHT.x + 0.7, k), lerp(TANK.y, LIGHT.y, k), QUAY.z + 0.25, rampOf(HULL)[2]);
   castShadow(TANK.x, TANK.y, QUAY.z + 1, TANK.r);
 }
-function drawLamp() {
+function lampState() {
   const v = S_.view;
-  const blink = Math.floor(S_.time * 2.5) % 2;
-  const color = v.throttled ? (blink ? [214, 60, 52] : [70, 60, 70]) : v.lampOn ? [255, 226, 120] : [90, 86, 96];
-  capsule([LIGHT.x, LIGHT.y, LIGHT.top + 0.2], [LIGHT.x, LIGHT.y, LIGHT.top + 0.85], 0.42, 0.42, () => color, "solid");
-  // roof cap
-  capsule([LIGHT.x, LIGHT.y, LIGHT.top + 1.15], [LIGHT.x, LIGHT.y, LIGHT.top + 1.5], 0.55, 0.1, () => [60, 58, 66], "solid");
+  if (v.throttled) return Math.floor(S_.time * 2.5) % 2 ? "alarm" : "off";
+  return v.lampOn ? "on" : "off";
+}
+function drawLamp() {
+  const state = lampState();
+  const color = state === "on" ? [255, 236, 140] : state === "alarm" ? [226, 66, 56] : [92, 98, 112];
+  // lantern room: a glass drum that glows, under a small red cap
+  capsule([LIGHT.x, LIGHT.y, LIGHT.top + 0.45], [LIGHT.x, LIGHT.y, LIGHT.top + 1.15], 0.55, 0.55, () => color, state === "off" ? "solid" : "gloss");
+  capsule([LIGHT.x, LIGHT.y, LIGHT.top + 1.55], [LIGHT.x, LIGHT.y, LIGHT.top + 1.95], 0.42, 0.06, () => BAND, "solid");
+}
+// a soft halo round the lamp and a ray from the lamp down to the patch of sea it lights
+function drawGlow() {
+  const state = lampState();
+  if (state === "off") return;
+  const v = S_.view, on = state === "on";
+  const tint = on ? [255, 206, 80] : [255, 110, 90];
+  const lamp = project(LIGHT.x, LIGHT.y, LIGHT.top + 0.8);
+  const R = on ? 12 + clamp(v.tank, 0, 1) * 6 : 10;
+  for (let iy = Math.max(0, lamp.sy - R | 0); iy <= Math.min(H - 1, lamp.sy + R); iy++) for (let ix = Math.max(0, lamp.sx - R | 0); ix <= Math.min(W - 1, lamp.sx + R); ix++) {
+    const d = Math.hypot(ix + 0.5 - lamp.sx, iy + 0.5 - lamp.sy) / R;
+    if (d >= 1 || (1 - d) * 0.9 <= bayerAt(ix, iy)) continue;
+    const i = iy * W + ix;
+    if (zb[i] > -1e8 && zb[i] !== groundZ[i]) continue; // glow on the sky and the sea, never over the tower
+    const c = pix[i], k = 0.5 * (1 - d);
+    pix[i] = rgb(lerp(c & 255, tint[0], k), lerp(c >> 8 & 255, tint[1], k), lerp(c >> 16 & 255, tint[2], k));
+  }
+  if (!on) return;
+  const a0 = S_.beam, end = project(LIGHT.x + Math.cos(a0) * 10, LIGHT.y + Math.sin(a0) * 10, 0);
+  const dx = end.sx - lamp.sx, dy = end.sy - lamp.sy, len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len, strength = clamp(0.4 + v.tank, 0.4, 1);
+  const x0 = Math.max(0, Math.min(lamp.sx, end.sx) - 20 | 0), x1 = Math.min(W - 1, Math.max(lamp.sx, end.sx) + 20 | 0);
+  const y0 = Math.max(0, Math.min(lamp.sy, end.sy) - 20 | 0), y1 = Math.min(H - 1, Math.max(lamp.sy, end.sy) + 20 | 0);
+  for (let iy = y0; iy <= y1; iy++) for (let ix = x0; ix <= x1; ix++) {
+    const px = ix + 0.5 - lamp.sx, py = iy + 0.5 - lamp.sy;
+    const along = px * ux + py * uy;
+    if (along < 2 || along > len) continue;
+    const half = 1.5 + along * 0.22, across = Math.abs(px * uy - py * ux);
+    if (across > half) continue;
+    const k = (1 - across / half) * (1 - along / len * 0.6) * strength * 0.55;
+    if (k <= bayerAt(ix, iy) * 0.7) continue;
+    const i = iy * W + ix;
+    if (zb[i] > -1e8 && zb[i] !== groundZ[i]) continue;
+    const c = pix[i];
+    pix[i] = rgb(lerp(c & 255, WARM[0], 0.45), lerp(c >> 8 & 255, WARM[1], 0.45), lerp(c >> 16 & 255, WARM[2], 0.3));
+  }
 }
 function drawBeam() {
   const v = S_.view;
   if (!v.lampOn || v.throttled) return;
-  const strength = clamp(0.35 + v.tank, 0.35, 1);
+  const strength = clamp(0.6 + v.tank, 0.6, 1.2);
   const a0 = S_.beam;
   const ca = Math.cos(a0), sa = Math.sin(a0);
   for (let i = 0; i < pix.length; i++) {
@@ -176,9 +216,9 @@ function drawBeam() {
     const along = dx * ca + dy * sa;
     if (along <= 1) continue;
     const across = Math.abs(-dx * sa + dy * ca) / along;
-    if (across > 0.2) continue;
+    if (across > 0.26 || along > 16) continue;
     const ix = i % W, iy = (i / W) | 0;
-    const k = (1 - across / 0.2) * (1 - along / 22) * strength;
+    const k = (1 - across / 0.26) * (1 - along / 18) * strength;
     if (k <= bayerAt(ix, iy) * 0.9) continue;
     const c = pix[i];
     pix[i] = rgb(lerp(c & 255, WARM[0], 0.55), lerp(c >> 8 & 255, WARM[1], 0.55), lerp(c >> 16 & 255, WARM[2], 0.4));
@@ -264,6 +304,7 @@ function draw() {
   applyShadows(groundZ);
   shadeEdges();
   drawBeam();
+  drawGlow();
   if (S_.held) {
     const target = S_.held.from === "ai" ? project(4.2, -6.7, 2.6) : project(-6.7, 4.6, 2.6);
     drawArrow(target.sx, target.sy, S_.time);
@@ -311,7 +352,6 @@ function start() {
   G.phase = "play";
   document.getElementById("pitch").hidden = true;
   document.getElementById("scores").hidden = false;
-  sound("bell");
 }
 function setAgent(on) {
   G.agent = on;
@@ -369,10 +409,8 @@ function update(dt) {
     G.clock += dt * HOURS_PER_SEC;
     while (G.sim.hour < G.clock && !G.sim.done) G.sim.tick();
     const coins = Math.floor(G.sim.yieldEarned);
-    while (G.coinsShown < coins) { G.coinsShown++; spawnCoin(); if (G.coinsShown % 5 === 0) sound("coin"); }
+    while (G.coinsShown < coins) { G.coinsShown++; spawnCoin(); }
     syncView();
-    if (S_.view.throttled && !G.wasThrottled) sound("horn");
-    G.wasThrottled = S_.view.throttled;
     updateHud();
     if (G.sim.done) endMonth();
   } else syncView();
@@ -408,7 +446,6 @@ function endMonth() {
     : `Usage spiked x${G.sc.spikeMultiplier} on day ${G.sc.spikeDay + 1}. The agent saw it coming and moved early, ${agent.throttledHours ? "and still" : "never"} ran dry${agent.throttledHours ? ` for ${agent.throttledHours}h` : ""}.`;
   nodes.result.hidden = false;
   setStatus("month over");
-  sound(beat ? "bell" : "horn");
 }
 
 // ---------------------------------------------------------------- input
@@ -441,12 +478,10 @@ function moveCrate(from) {
   if (amount < 1) return false;
   G.sim.move(from, amount);
   syncView();
-  sound("drop");
   return true;
 }
 if (!VIEW_ONLY) {
   canvas.addEventListener("pointerdown", e => {
-    ensureAudio();
     canvas.focus({ preventScroll: true });
     if (G.phase === "over") return;
     S_.pointer = toCanvas(e);
@@ -456,7 +491,6 @@ if (!VIEW_ONLY) {
     canvas.classList.add("dragging");
     const w = pointerWorld();
     S_.held = { from: c.side, x: w.x, y: w.y };
-    sound("pop");
   });
   canvas.addEventListener("pointermove", e => {
     if (!S_.held) return;
@@ -471,25 +505,23 @@ if (!VIEW_ONLY) {
     S_.held = null;
     const to = sideAt(S_.pointer.x, S_.pointer.y);
     if (to !== h.from) moveCrate(h.from);
-    else sound("pop");
   };
   canvas.addEventListener("pointerup", letGo);
   canvas.addEventListener("pointercancel", () => { S_.held = null; canvas.classList.remove("dragging"); });
   addEventListener("keydown", e => {
     if (document.querySelector("dialog[open]")) return;
     const k = e.key.toLowerCase();
-    if (k === "arrowleft") { e.preventDefault(); ensureAudio(); moveCrate("yield"); }
-    else if (k === "arrowright") { e.preventDefault(); ensureAudio(); moveCrate("ai"); }
-    else if (k === "a") { ensureAudio(); setAgent(!G.agent); }
+    if (k === "arrowleft") { e.preventDefault(); moveCrate("yield"); }
+    else if (k === "arrowright") { e.preventDefault(); moveCrate("ai"); }
+    else if (k === "a") { setAgent(!G.agent); }
     else if (k === " ") {
       e.preventDefault();
-      ensureAudio();
       if (G.phase === "over") { if (S_.time - G.overAt > 0.5) again(); }
       else if (G.phase === "intro") start();
       else G.paused = !G.paused;
     }
   });
-  nodes.agent.addEventListener("click", () => { ensureAudio(); setAgent(!G.agent); });
+  nodes.agent.addEventListener("click", () => { setAgent(!G.agent); });
   const again = () => { G.phase = "intro"; newMonth(); if (G.agent) start(); };
   document.getElementById("again").addEventListener("click", again);
   const rules = document.getElementById("rules");
@@ -512,49 +544,6 @@ addEventListener("message", e => {
   v.lampOn = d.lampOn !== false;
   v.demand = d.demand == null ? 1 : d.demand;
   if (d.coin) spawnCoin();
-});
-
-// ---------------------------------------------------------------- sound
-let audio = null, muted = false, noiseBuffer = null;
-function ensureAudio() {
-  if (audio) { if (audio.state === "suspended") audio.resume(); return; }
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC) return;
-  audio = new AC();
-  noiseBuffer = audio.createBuffer(1, audio.sampleRate, audio.sampleRate);
-  const data = noiseBuffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-}
-function burst(type, freq, volume, length) {
-  const now = audio.currentTime, src = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
-  src.buffer = noiseBuffer;
-  filter.type = type; filter.frequency.value = freq; filter.Q.value = 0.7;
-  gain.gain.setValueAtTime(volume, now);
-  gain.gain.exponentialRampToValueAtTime(0.0005, now + length);
-  src.connect(filter).connect(gain).connect(audio.destination);
-  src.start(now, Math.random() * 0.5, length + 0.02);
-}
-function tone(freq, volume, length, type = "sine", delay = 0) {
-  const now = audio.currentTime + delay, osc = audio.createOscillator(), gain = audio.createGain();
-  osc.type = type; osc.frequency.value = freq;
-  gain.gain.setValueAtTime(volume, now);
-  gain.gain.exponentialRampToValueAtTime(0.0005, now + length);
-  osc.connect(gain).connect(audio.destination);
-  osc.start(now); osc.stop(now + length + 0.02);
-}
-function sound(kind) {
-  if (!audio || muted || VIEW_ONLY) return;
-  if (kind === "pop") burst("bandpass", 1300, 0.05, 0.06);
-  if (kind === "drop") burst("lowpass", 420, 0.18, 0.16);
-  if (kind === "coin") { tone(1320, 0.03, 0.12); tone(1760, 0.025, 0.16, "sine", 0.06); }
-  if (kind === "horn") { tone(110, 0.08, 0.7, "sawtooth"); tone(116, 0.05, 0.7, "sawtooth"); }
-  if (kind === "bell") { tone(660, 0.06, 1.1); tone(990, 0.03, 0.9); }
-}
-const muteButton = document.getElementById("mute");
-muteButton?.addEventListener("click", () => {
-  muted = !muted;
-  muteButton.textContent = muted ? "sound off" : "sound on";
-  muteButton.setAttribute("aria-pressed", String(muted));
 });
 
 // ---------------------------------------------------------------- boot

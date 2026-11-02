@@ -11,6 +11,7 @@
   body { overflow: hidden; }
   #stage { position: fixed; inset: 0; display: grid; place-items: center; }
   canvas { display: block; image-rendering: pixelated; touch-action: none; cursor: grab; outline: none; }
+  canvas:focus, canvas:focus-visible { outline: none; }
   canvas.dragging { cursor: grabbing; }
   #scores { position: fixed; top: max(14px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); pointer-events: none; }
   #scores b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -36,11 +37,7 @@
   #result td:not(:first-child), #result th:not(:first-child) { text-align: right; }
   #result tr.you td { font-weight: 600; }
   #result .row { display: flex; gap: 8px; justify-content: space-between; align-items: center; }
-  #credit { position: fixed; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); color: var(--muted); white-space: nowrap; pointer-events: none; }
-  #credit a { color: inherit; pointer-events: auto; }
-  @media (max-width: 1100px) { #credit { bottom: max(38px, calc(env(safe-area-inset-bottom) + 24px)); } }
-  @media (max-width: 600px) { #credit { display: none; } }
-  body.view #scores, body.view #pitch, body.view #brand, body.view #top-right, body.view .hud, body.view #credit, body.view #result { display: none; }
+  body.view #scores, body.view #pitch, body.view #brand, body.view #top-right, body.view .hud, body.view #result { display: none; }
   body.view canvas { cursor: default; }
 </style>
 </head>
@@ -64,9 +61,7 @@
 </div>
 <div class="hud" id="bottom">
   <div id="status" role="status" aria-live="polite"></div>
-  <button class="link" id="mute" type="button" aria-pressed="false">sound on</button>
 </div>
-<div id="credit">pixel engine from <a href="https://github.com/amirmushichge/pixel-plays" target="_blank" rel="noopener noreferrer">Pixel Plays</a></div>
 
 <dialog id="rules" aria-labelledby="rules-title" class="panel">
   <h2 id="rules-title">Keep the light on</h2>
