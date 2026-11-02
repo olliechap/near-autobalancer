@@ -178,3 +178,25 @@ export function nextAction(v: VaultBooks, target: number, minStake = 1, dust = 0
   if (spare > dust) return { kind: "StakeYield", amount: spare };
   return null;
 }
+
+/**
+ * Emergency top-up size: enough one-off credit packs to carry the vault through the time it takes new stake to
+ * arrive (unbond + 1 day) at the forecast burn, limited by what the vault allows (cap and earned yield).
+ * Returns 0 when there is no emergency or nothing can be bought.
+ */
+export function topupPacks(
+  pl: Plan,
+  obs: Observation,
+  m: Market,
+  p: PolicyParams,
+  packNear: number,
+  availableNear: number,
+): number {
+  if (!pl.emergency || packNear <= 0) return 0;
+  const days = p.unlockDays + 1;
+  const shortfallUsd = days * (pl.burnUsdDay - m.creditUsdPerNearDay * obs.aiNear) - obs.creditUsd;
+  if (shortfallUsd <= 0) return 0;
+  const want = Math.ceil(shortfallUsd / m.nearUsd / packNear);
+  const can = Math.floor(availableNear / packNear + 1e-9);
+  return Math.max(0, Math.min(want, can));
+}
