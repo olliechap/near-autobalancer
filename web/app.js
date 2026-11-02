@@ -571,7 +571,10 @@ function renderLive() {
     stat("vault", fmtNear(m.total), "NEAR") +
     stat("on NEAR AI", pct(s.ai_bps / 10000), `target ${pct(s.target_ai_bps / 10000)}`) +
     stat("AI credits", fmtUsd(m.credits), isFinite(m.runway) ? `${m.runway.toFixed(1)} days left` : "growing", m.runway < 1) +
-    stat("forecast burn", fmtUsd(m.burn), "a day");
+    stat("forecast burn", fmtUsd(m.burn), "a day") +
+    // vault 0.2.1 and later
+    (s.yield_earned != null ? stat("yield earned", fmtNear(yoctoToNear(s.yield_earned)), "NEAR, all time") : "") +
+    (s.topup_available != null ? stat("top-up left", fmtNear(yoctoToNear(s.topup_available)), "NEAR this window") : "");
   $("live-note").textContent = `Read from ${TESTNET.rpc.replace("https://", "")} at ${L.read.toLocaleTimeString()}${L.error ? ` · last refresh failed: ${L.error}` : ""} · refreshes every 15s${s.exiting ? " · vault is exiting" : ""}${s.busy ? " · a step is in progress" : ""}`;
   renderPlan({ total: m.total, c: m.c, nearUsd: 2.5, apy: 0.045 * 0.95, maxAi: s.policy.max_ai_bps / 10000, burn: m.burn });
   renderSplit({ ai: m.ai, flight: m.flight, yld: m.yld, liquid: m.liquid, target: m.target, total: m.total });
