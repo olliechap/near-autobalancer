@@ -17,20 +17,18 @@ const WASM = path.resolve(import.meta.dirname, "../../target/wasm32-unknown-unkn
  */
 const TOPUP_PRICE = near("0.001");
 
-const version = await view(V, "get_version").catch(() => "0.1.0 (no get_version)");
-console.log(`${V}: running ${version}`);
-if (version !== "0.2.0") {
+const target = /^version = "(.+)"/m.exec(fs.readFileSync(path.resolve(import.meta.dirname, "../../contracts/vault/Cargo.toml"), "utf8"))![1];
+const version: string = await view(V, "get_version").catch(() => "0.1.0");
+console.log(`${V}: running ${version}, repo has ${target}`);
+if (version !== target) {
+  // Only a v1 vault needs `migrate`; v2.x releases keep the v2 state layout, and running migrate on it would fail.
+  const actions = [transactions.deployContract(fs.readFileSync(WASM))];
+  if (version.startsWith("0.1")) actions.push(transactions.functionCall("migrate", {}, 100n * TGAS, 0n));
   const acc = await account(V);
-  const r: any = await acc.signAndSendTransaction({
-    receiverId: V,
-    actions: [
-      transactions.deployContract(fs.readFileSync(WASM)),
-      transactions.functionCall("migrate", {}, 100n * TGAS, 0n),
-    ],
-  });
+  const r: any = await acc.signAndSendTransaction({ receiverId: V, actions });
   const failed = r.receipts_outcome.find((x: any) => x.outcome.status.Failure);
   if (failed) throw new Error("upgrade failed: " + JSON.stringify(failed.outcome.status.Failure));
-  console.log(`upgraded to ${await view(V, "get_version")}: tx ${r.transaction.hash}`);
+  console.log(`upgraded to ${await view(V, "get_version")}${actions.length > 1 ? " with migrate" : ""}: tx ${r.transaction.hash}`);
 }
 
 // One-off price for top-ups on the AI product.
