@@ -34,10 +34,11 @@ const market: Market = {
 };
 
 /**
- * The agent signs as the vault, so the gas it prepays (charged up front at a pessimistic price, ~0.5 NEAR for
- * 450 Tgas) leaves the vault's balance while the call runs. Don't plan to stake that NEAR.
+ * The agent signs as the vault, so its call's prepaid gas is held out of the vault's balance while the call runs.
+ * The vault (0.2.1+) counts that held gas as liquid in its checks; this small margin only absorbs rounding and the
+ * gas a step itself burns.
  */
-const GAS_HEADROOM_NEAR = Number(process.env.GAS_HEADROOM_NEAR ?? "0.6");
+const GAS_HEADROOM_NEAR = Number(process.env.GAS_HEADROOM_NEAR ?? "0.05");
 
 const toNear = (y: string | bigint) => Number(BigInt(y)) / 1e24;
 /** Whole NEAR to yocto, rounded down to 0.001 NEAR so on-chain bound checks never fail on float dust. */
@@ -147,7 +148,6 @@ export async function tick(opts: { act: boolean } = { act: true }) {
 
   // 2. New target, if the plan moved far enough.
   let target = currentTarget;
-  // The vault checks the share against its total *during* the call, which is short by the prepaid gas.
   const onChainMax = pp.maxAiShare * Math.max(0, total - GAS_HEADROOM_NEAR);
   const wanted = Math.floor(Math.min(p.targetAiNear, onChainMax) * 1000) / 1000;
   if (p.move && Math.abs(wanted - currentTarget) >= pp.churnNear) {
