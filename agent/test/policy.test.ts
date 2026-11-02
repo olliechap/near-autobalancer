@@ -79,3 +79,10 @@ test("simulator: Ballast avoids throttling that set-and-forget suffers, and out-
   assert.ok(s.throttledHours > 0);
   assert.ok(b.yieldEarnedNear > a.yieldEarnedNear + 50);
 });
+
+test("nextAction: gas headroom limits stakes but not the yield unstake the vault allows", () => {
+  const books = { liquid: 2.3, aiStaked: 7, aiUnstaking: 0, aiWithdrawable: 0, yieldStaked: 2.657, yieldUnstaking: 0, yieldCanWithdraw: false };
+  assert.deepEqual(nextAction(books, 9.3, 1, 0.5, 0.6), { kind: "StakeAi", amount: 2.3 - 0.6 });
+  // 0.6 liquid left and a 0.6 gap: the vault counts that liquid, so no yield unstake and nothing to do.
+  assert.equal(nextAction({ ...books, liquid: 0.6, aiStaked: 8.7 }, 9.3, 1, 0.5, 0.6), null);
+});
