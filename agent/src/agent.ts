@@ -147,10 +147,11 @@ export async function tick(opts: { act: boolean } = { act: true }) {
 
   // 2. New target, if the plan moved far enough.
   let target = currentTarget;
-  if (p.move && Math.abs(p.targetAiNear - currentTarget) >= pp.churnNear) {
-    // The vault checks the share against its total *during* the call, which is short by the prepaid gas.
-    const onChainMax = pp.maxAiShare * Math.max(0, total - GAS_HEADROOM_NEAR);
-    target = Math.floor(Math.min(p.targetAiNear, onChainMax) * 1000) / 1000;
+  // The vault checks the share against its total *during* the call, which is short by the prepaid gas.
+  const onChainMax = pp.maxAiShare * Math.max(0, total - GAS_HEADROOM_NEAR);
+  const wanted = Math.floor(Math.min(p.targetAiNear, onChainMax) * 1000) / 1000;
+  if (p.move && Math.abs(wanted - currentTarget) >= pp.churnNear) {
+    target = wanted;
     const a = nextAction(books, target, 1, 0.5, GAS_HEADROOM_NEAR);
     const report = {
       burn_micro_usd_per_day: String(Math.round(p.burnUsdDay * 1e6)),
