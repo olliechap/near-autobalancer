@@ -128,3 +128,20 @@ iframe { border: 0; display: block; width: 100%; height: 100%; pointer-events: n
 .cmp td:not(:first-child), .cmp th:not(:first-child) { text-align: right; }
 .cmp tr.ours td { font-weight: 600; }
 .cmp .bad { color: var(--alarm); }
+
+/* ---------- wallet ---------- */
+#wallets { width: min(360px, calc(100vw - 32px)); }
+.wallet-list { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 6px; }
+.wallet-list button { width: 100%; display: flex; align-items: center; gap: 10px; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--ink); padding: 10px 12px; cursor: pointer; text-align: left; }
+.wallet-list button:hover, .wallet-list button:focus-visible { background: var(--ink); color: var(--paper); outline: none; }
+.wallet-list img { width: 20px; height: 20px; }
+.wallet-list .muted { margin-left: auto; font-size: 12px; }
+.wallet-list button:hover .muted { color: var(--faint); }
+.rails-save { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.owner { border-top: 1px solid var(--faint); padding-top: 12px; display: grid; gap: 8px; }
+.owner h3 { color: var(--ink); font-weight: 600; margin: 0; }
+.owner-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.owner-row input { width: 8ch; }
+.button.confirm { background: var(--alarm); border-color: var(--alarm); color: #fff; }
+.busy-note { color: var(--muted); font-size: 12px; }
+#who b { color: var(--ink); font-weight: 600; }
