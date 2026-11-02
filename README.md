@@ -129,7 +129,7 @@ The full stack is deployed under `ballast-11012319.testnet` (ids in `agent/deplo
 |---|---|
 | `stake.ballast-11012319.testnet` | NEAR AI staking-contract, Farm product `prod_6TSXAT9FNIPqAs` |
 | `pool-ai.ballast-11012319.testnet` | validator behind the farm (no APY: NEAR AI keeps the rewards) |
-| `pool-yield.ballast-11012319.testnet` | yield pool, 4.5% APY, 1-epoch unbond |
+| `pool-yield.ballast-11012319.testnet` | yield pool, 1-epoch unbond. APY raised from 4.5% to 50% on 2 Nov so the small demo vault earns enough yield to pay for a top-up |
 | `vault.ballast-11012319.testnet` | demo vault, ~12 NEAR, agent key limited to rebalance / step / sync |
 | `vault-exit.ballast-11012319.testnet` | second vault used to test a full exit |
 
@@ -176,6 +176,10 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
   it raised the AI target from 9.3 to 10.1 NEAR (90% of the vault, the policy cap) and started unstaking the
   yield side to fund it. The digest reports it as "Moved 0.801 NEAR toward AI (AI target 9.314 → 10.115) on
   Monday 2 Nov: runway 0.0d is shorter than the 2.0d it takes to add stake."
+  After the epoch the agent finished the move: `WithdrawYield` 0.932 NEAR
+  ([tx](https://testnet.nearblocks.io/txns/G4gf8KkVrL4ox6Y92wvym4gyurES1b9TTWu3LnPeezEt)), then `StakeAi` 1.339 NEAR
+  ([tx](https://testnet.nearblocks.io/txns/EoSJuF7goWvcyidzQyeZqMFCXs3B7GDVHxbKAdLm4nCB)). The AI side went from
+  8.707 to 10.045 NEAR against the 10.115 target; the gap left is under the 0.5 NEAR dust threshold.
 * **Full exit** on `vault-exit`: the owner called `exit`; a stranger account unstaked both sides; after the epoch
   the stranger withdrew 1.5 NEAR from NEAR AI's staking contract (`withdraw(validator_id)`) and 0.5 NEAR from the
   yield pool; the owner then withdrew 2.304 NEAR to their own account.

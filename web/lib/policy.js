@@ -159,18 +159,45 @@ export function plan(obs             , m        , p               = DEFAULT_PARA
                                              
 
 /** The single next step toward `target`, or null if there is nothing useful to do this epoch. */
-export function nextAction(v            , target        , minStake = 1, dust = 0.5)                {
+/**
+ * `headroom` is liquid NEAR not to stake: when the agent signs as the vault, the gas it prepays leaves the
+ * vault's balance while the call runs. It only limits stakes; the vault still counts that NEAR as liquid.
+ */
+export function nextAction(v            , target        , minStake = 1, dust = 0.5, headroom = 0)                {
   if (v.aiWithdrawable > dust) return { kind: "WithdrawAi" };
   if (v.yieldUnstaking > dust && v.yieldCanWithdraw) return { kind: "WithdrawYield", amount: v.yieldUnstaking };
   const gap = target - v.aiStaked;
-  if (gap >= minStake && v.liquid >= minStake) return { kind: "StakeAi", amount: Math.min(gap, v.liquid) };
+  const stakeable = Math.max(0, v.liquid - headroom);
+  if (gap >= minStake && stakeable >= minStake) return { kind: "StakeAi", amount: Math.min(gap, stakeable) };
   if (gap > dust) {
     // Free NEAR from the yield side, counting what is already on its way back.
     const need = gap - v.liquid - v.yieldUnstaking - v.aiUnstaking;
     if (need > dust && v.yieldStaked > dust) return { kind: "UnstakeYield", amount: Math.min(need, v.yieldStaked) };
   }
   if (-gap > dust) return { kind: "UnstakeAi", amount: -gap };
-  const spare = v.liquid - Math.max(0, gap);
+  const spare = stakeable - Math.max(0, gap);
   if (spare > dust) return { kind: "StakeYield", amount: spare };
   return null;
+}
+
+/**
+ * Emergency top-up size: enough one-off credit packs to carry the vault through the time it takes new stake to
+ * arrive (unbond + 1 day) at the forecast burn, limited by what the vault allows (cap and earned yield).
+ * Returns 0 when there is no emergency or nothing can be bought.
+ */
+export function topupPacks(
+  pl      ,
+  obs             ,
+  m        ,
+  p              ,
+  packNear        ,
+  availableNear        ,
+)         {
+  if (!pl.emergency || packNear <= 0) return 0;
+  const days = p.unlockDays + 1;
+  const shortfallUsd = days * (pl.burnUsdDay - m.creditUsdPerNearDay * obs.aiNear) - obs.creditUsd;
+  if (shortfallUsd <= 0) return 0;
+  const want = Math.ceil(shortfallUsd / m.nearUsd / packNear);
+  const can = Math.floor(availableNear / packNear + 1e-9);
+  return Math.max(0, Math.min(want, can));
 }

@@ -18,8 +18,12 @@
     <h1 id="login-title">Log in to Ballast</h1>
     <p class="muted">Ballast never asks for your keys. Your NEAR stays in a vault only you can withdraw from.</p>
 
-    <button id="demo" class="button wide" type="button">Open the demo vault</button>
-    <p class="hint muted">100,000 NEAR, $100 a week of AI, a usage spike mid-month. Runs the agent's real policy code in your browser.</p>
+    <button id="connect" class="button wide" type="button">Connect a NEAR wallet</button>
+    <p class="hint muted">Testnet. Opens your vault at <code>vault.&lt;your account&gt;</code>, and lets you approve moves and change guard rails, each signed in your wallet.</p>
+    <p id="connect-error" class="hint error" role="alert" hidden></p>
+
+    <button id="demo" class="button wide ghost" type="button">Open the demo vault</button>
+    <p class="hint muted">No wallet needed. 100,000 NEAR, $100 a week of AI, a usage spike mid-month, running the agent's real policy code in your browser.</p>
 
     <form id="watch" class="watch">
       <label for="vault-id">Or watch a vault on NEAR testnet</label>
@@ -33,6 +37,13 @@
   </section>
 </main>
 
+<dialog id="wallets" class="panel" aria-labelledby="wallets-title">
+  <h2 id="wallets-title">Connect a wallet</h2>
+  <p class="muted small">NEAR testnet. Ballast asks for no access key: each action opens your wallet to approve.</p>
+  <ul id="wallet-list" class="wallet-list"></ul>
+  <form method="dialog" class="row"><span></span><button class="link">Cancel</button></form>
+</dialog>
+
 <!-- ------------------------------------------------------------ dashboard -->
 <div id="dash" hidden>
   <header class="top">
@@ -40,6 +51,7 @@
     <span id="vault-name" class="muted"></span>
     <span id="mode-chip" class="chip"></span>
     <span class="spacer"></span>
+    <span id="who" class="muted small"></span>
     <button id="logout" class="link" type="button">log out</button>
   </header>
 
@@ -82,6 +94,10 @@
         <label>Max AI share <output id="max-out">90%</output><input id="max-ai" type="range" min="10" max="100" step="5" value="90"></label>
         <label>Credit buffer <output id="buf-out">3 days</output><input id="buffer" type="range" min="1" max="10" step="1" value="3"></label>
         <label>Usage spike <output id="spike-out">x2 from day 11</output><input id="spike" type="range" min="1" max="3" step="0.1" value="2"></label>
+        <div id="rails-save" class="rails-save" hidden>
+          <button id="save-policy" class="button" type="button">Save to vault</button>
+          <span id="save-note" class="muted small" role="status"></span>
+        </div>
       </details>
     </section>
 
@@ -89,6 +105,19 @@
     <section class="card approvals" aria-labelledby="appr-title">
       <h2 id="appr-title">Approve moves</h2>
       <div id="approvals"></div>
+      <div id="owner" class="owner" hidden>
+        <h3>Your vault</h3>
+        <div class="owner-row">
+          <label class="small" for="deposit-amt">Add NEAR</label>
+          <input id="deposit-amt" type="number" min="0.1" step="0.1" value="1" inputmode="decimal">
+          <button id="deposit" class="button ghost" type="button">Deposit</button>
+        </div>
+        <div class="owner-row">
+          <button id="exit" class="button ghost" type="button">Exit: unwind both sides</button>
+          <button id="withdraw" class="button ghost" type="button">Withdraw</button>
+        </div>
+        <p id="owner-note" class="muted small" role="status"></p>
+      </div>
     </section>
 
     <!-- stake split -->

@@ -1,0 +1,20 @@
+{
+  "name": "ballast-wallet-bundle",
+  "private": true,
+  "description": "Builds web/vendor/wallet.js: NEAR Wallet Selector as one browser ES module, so the site keeps no build step.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@near-js/transactions": "2.5.1",
+    "@near-wallet-selector/core": "10.1.4",
+    "@near-wallet-selector/here-wallet": "10.1.4",
+    "@near-wallet-selector/meteor-wallet": "10.1.4",
+    "@near-wallet-selector/my-near-wallet": "10.1.4",
+    "buffer": "6.0.3",
+    "esbuild": "0.24.2",
+    "process": "0.11.10",
+    "util": "0.12.5"
+  }
+}
