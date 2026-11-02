@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ballast · keep the light on</title>
+<meta name="description" content="Ballast keeps exactly enough of your staked NEAR on NEAR AI to cover your AI usage, and the rest earning yield. Try to beat the agent.">
+<link rel="stylesheet" href="ui.css">
+<style>
+  html, body { height: 100%; }
+  body { overflow: hidden; }
+  #stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  canvas { display: block; image-rendering: pixelated; touch-action: none; cursor: grab; outline: none; }
+  canvas.dragging { cursor: grabbing; }
+  #scores { position: fixed; top: max(14px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); pointer-events: none; }
+  #scores b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  #scores .sub { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #scores .sub.alarm { color: var(--alarm); }
+  #pitch { position: fixed; top: max(14px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); width: min(380px, calc(100vw - 32px)); pointer-events: none; }
+  #pitch h1 { font-size: 16px; margin-bottom: 4px; }
+  #pitch p + p { margin-top: 6px; }
+  #scores[hidden], #pitch[hidden] { display: none; }
+  @media (max-width: 760px) { #brand { display: none; } #pitch .muted { display: none; } }
+  @media (min-width: 761px) { .small-only { display: none; } }
+  #brand { position: fixed; top: max(4px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 5; }
+  #top-right { position: fixed; top: max(4px, env(safe-area-inset-top)); right: max(6px, env(safe-area-inset-right)); z-index: 5; display: flex; }
+  .hud { position: fixed; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; pointer-events: none; }
+  #bottom { bottom: max(14px, env(safe-area-inset-bottom)); }
+  #status { color: var(--muted); }
+  #bottom .link { pointer-events: auto; margin: -10px; }
+  #result { position: fixed; left: 50%; bottom: max(56px, calc(env(safe-area-inset-bottom) + 44px)); transform: translateX(-50%); width: min(420px, calc(100vw - 32px)); z-index: 6; }
+  #result[hidden] { display: none; }
+  #result table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin: 8px 0 12px; }
+  #result th { text-align: left; font-weight: 400; color: var(--muted); }
+  #result td, #result th { padding: 3px 0; }
+  #result td:not(:first-child), #result th:not(:first-child) { text-align: right; }
+  #result tr.you td { font-weight: 600; }
+  #result .row { display: flex; gap: 8px; justify-content: space-between; align-items: center; }
+  #credit { position: fixed; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); color: var(--muted); white-space: nowrap; pointer-events: none; }
+  #credit a { color: inherit; pointer-events: auto; }
+  @media (max-width: 1100px) { #credit { bottom: max(38px, calc(env(safe-area-inset-bottom) + 24px)); } }
+  @media (max-width: 600px) { #credit { display: none; } }
+  body.view #scores, body.view #pitch, body.view #brand, body.view #top-right, body.view .hud, body.view #credit, body.view #result { display: none; }
+  body.view canvas { cursor: default; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" tabindex="0" aria-label="Ballast harbour. Crates of staked NEAR sit by the lighthouse, earning AI credits, or on the barge, earning NEAR. Drag a crate across to move it. Left arrow sends a crate to the lighthouse, right arrow to the barge, A lets the agent play."></canvas></div>
+
+<header id="pitch">
+  <h1>Ballast</h1>
+  <p>Your NEAR pays for your AI, and never a token more than it needs to.</p>
+  <p class="muted">Stake too much for NEAR AI and you burn yield on credits you can't cash out. Too little and you get throttled. Try balancing it by hand for a month.</p>
+</header>
+<div id="scores" aria-live="off" hidden>
+  <div><b id="earned">0.0</b> NEAR earned</div>
+  <div class="sub" id="sub">day 1 · credits $25 · 0h throttled</div>
+</div>
+<nav id="brand"><button class="link" id="rules-open" type="button">Ballast · rules</button></nav>
+<div id="top-right">
+  <button class="link small-only" id="rules-open-2" type="button">rules</button>
+  <button class="link" id="agent" type="button" aria-pressed="false">let the agent play</button>
+  <a class="link strong" href="app.html">log in →</a>
+</div>
+<div class="hud" id="bottom">
+  <div id="status" role="status" aria-live="polite"></div>
+  <button class="link" id="mute" type="button" aria-pressed="false">sound on</button>
+</div>
+<div id="credit">pixel engine from <a href="https://github.com/amirmushichge/pixel-plays" target="_blank" rel="noopener noreferrer">Pixel Plays</a></div>
+
+<dialog id="rules" aria-labelledby="rules-title" class="panel">
+  <h2 id="rules-title">Keep the light on</h2>
+  <ol>
+    <li>Your vault is 20 crates of NEAR, 5,000 each. Crates by the <b>lighthouse</b> are staked for NEAR AI: they fill the credit tank that keeps the light on. Crates on the <b>barge</b> are staked for yield: they earn NEAR.</li>
+    <li>Ships are your AI requests. If the tank runs dry the light goes out and your requests are throttled.</li>
+    <li>Drag a crate across to move it. It rides the ferry for 4 epochs (28 hours) before it lands, so move early. Usage will spike at some point in the month.</li>
+    <li>Score: NEAR earned, minus 2 for every hour throttled. At the end you see what the Ballast agent did with the same month.</li>
+    <li>Keys: ← sends a crate to the lighthouse, → sends one to the barge, A lets the agent play, space pauses.</li>
+  </ol>
+  <form method="dialog" class="row"><span class="muted">30 days in about 75 seconds</span><button class="link strong">Play</button></form>
+</dialog>
+
+<section id="result" class="panel" hidden aria-live="polite">
+  <h2 id="result-title">Month over</h2>
+  <table>
+    <thead><tr><th></th><th>NEAR earned</th><th>throttled</th><th>score</th></tr></thead>
+    <tbody id="result-rows"></tbody>
+  </table>
+  <p id="result-line" class="muted"></p>
+  <div class="row">
+    <button class="link" id="again" type="button">sail again</button>
+    <a class="button" href="app.html">let the agent run my vault →</a>
+  </div>
+</section>
+
+<script>window.PP_SCENE = { originY: 4, shadowX: 1.1, shadowY: -.25 };</script>
+<script src="engine.js"></script>
+<script type="module" src="harbour.js"></script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ballast · your vault</title>
+<meta name="description" content="Set a weekly AI budget, see your stake split and credit forecast, and approve the agent's moves.">
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- ------------------------------------------------------------ login -->
+<main id="login" class="login">
+  <div class="login-pic"><iframe id="login-pic" src="index.html?view=1" title="Your vault as a harbour: crates by the lighthouse earn AI credits, crates on the barge earn NEAR" tabindex="-1"></iframe></div>
+  <section class="login-card panel" aria-labelledby="login-title">
+    <a class="link back" href="index.html">← back to the harbour</a>
+    <h1 id="login-title">Log in to Ballast</h1>
+    <p class="muted">Ballast never asks for your keys. Your NEAR stays in a vault only you can withdraw from.</p>
+
+    <button id="demo" class="button wide" type="button">Open the demo vault</button>
+    <p class="hint muted">100,000 NEAR, $100 a week of AI, a usage spike mid-month. Runs the agent's real policy code in your browser.</p>
+
+    <form id="watch" class="watch">
+      <label for="vault-id">Or watch a vault on NEAR testnet</label>
+      <div class="row">
+        <input id="vault-id" name="vault" autocomplete="off" spellcheck="false" value="vault.ballast-11012319.testnet" aria-describedby="watch-hint">
+        <button class="button ghost" type="submit">Watch</button>
+      </div>
+      <p id="watch-hint" class="hint muted">Read-only, straight from the chain. Your account id works too if your vault is <code>vault.&lt;you&gt;</code>.</p>
+      <p id="watch-error" class="hint error" role="alert" hidden></p>
+    </form>
+  </section>
+</main>
+
+<!-- ------------------------------------------------------------ dashboard -->
+<div id="dash" hidden>
+  <header class="top">
+    <a class="brand" href="index.html">Ballast</a>
+    <span id="vault-name" class="muted"></span>
+    <span id="mode-chip" class="chip"></span>
+    <span class="spacer"></span>
+    <button id="logout" class="link" type="button">log out</button>
+  </header>
+
+  <main class="grid">
+    <!-- the harbour and the headline numbers -->
+    <section class="card hero" aria-labelledby="hero-title">
+      <h2 id="hero-title" class="sr-only">Your vault</h2>
+      <div class="pic"><iframe id="pic" src="index.html?view=1" title="Your vault as a harbour" tabindex="-1"></iframe></div>
+      <div class="hero-side">
+        <dl class="stats" id="stats"></dl>
+        <div class="clock" id="clock">
+          <button id="play" class="button ghost" type="button" aria-pressed="false">▶ play month</button>
+          <label class="scrub"><span id="day-label">day 1 of 30</span>
+            <input id="scrub" type="range" min="0" max="720" value="0" step="1" aria-label="Day of the month">
+          </label>
+          <select id="speed" aria-label="Playback speed"><option value="6">slow</option><option value="16" selected>normal</option><option value="48">fast</option></select>
+        </div>
+        <p id="live-note" class="muted small" hidden></p>
+      </div>
+    </section>
+
+    <!-- weekly budget and guard rails -->
+    <section class="card budget" aria-labelledby="budget-title">
+      <h2 id="budget-title">Weekly AI budget</h2>
+      <div class="budget-row">
+        <span class="dollar">$</span>
+        <input id="budget" type="number" min="0" max="5000" step="1" value="100" aria-label="Weekly AI budget in dollars">
+        <span class="muted">a week</span>
+      </div>
+      <input id="budget-range" type="range" min="10" max="400" step="5" value="100" aria-label="Weekly AI budget slider">
+      <p id="plan-line" class="plan-line"></p>
+
+      <fieldset class="mode">
+        <legend>When the agent wants to move stake</legend>
+        <label><input type="radio" name="mode" value="auto" checked> move it (autopilot)</label>
+        <label><input type="radio" name="mode" value="ask"> ask me first</label>
+      </fieldset>
+      <details class="rails">
+        <summary>Guard rails <span class="muted">(stored in the vault contract)</span></summary>
+        <label>Max AI share <output id="max-out">90%</output><input id="max-ai" type="range" min="10" max="100" step="5" value="90"></label>
+        <label>Credit buffer <output id="buf-out">3 days</output><input id="buffer" type="range" min="1" max="10" step="1" value="3"></label>
+        <label>Usage spike <output id="spike-out">x2 from day 11</output><input id="spike" type="range" min="1" max="3" step="0.1" value="2"></label>
+      </details>
+    </section>
+
+    <!-- pending approvals -->
+    <section class="card approvals" aria-labelledby="appr-title">
+      <h2 id="appr-title">Approve moves</h2>
+      <div id="approvals"></div>
+    </section>
+
+    <!-- stake split -->
+    <section class="card split" aria-labelledby="split-title">
+      <div class="row"><h2 id="split-title">Stake split</h2><span id="split-total" class="muted"></span></div>
+      <div id="split-bar" class="split-bar" role="img"></div>
+      <ul id="split-legend" class="legend"></ul>
+    </section>
+
+    <!-- forecast -->
+    <section class="card forecast" aria-labelledby="fc-title">
+      <div class="row"><h2 id="fc-title">Credit forecast</h2><span id="fc-note" class="muted"></span></div>
+      <div class="chart" id="chart-credits"></div>
+      <div class="row"><h3>Usage vs credits earned, $ a day</h3><ul class="legend inline" id="usage-legend"></ul></div>
+      <div class="chart" id="chart-usage"></div>
+      <div class="row"><h3>Where the NEAR sits</h3><ul class="legend inline" id="stake-legend"></ul></div>
+      <div class="chart" id="chart-stake"></div>
+    </section>
+
+    <!-- history -->
+    <section class="card history" aria-labelledby="hist-title">
+      <div class="row"><h2 id="hist-title">Rebalance history</h2><span id="hist-note" class="muted"></span></div>
+      <ol id="history" class="history-list"></ol>
+    </section>
+
+    <!-- comparison -->
+    <section class="card compare" aria-labelledby="cmp-title">
+      <h2 id="cmp-title">This month, three ways</h2>
+      <table class="cmp"><thead><tr><th></th><th>NEAR earned</th><th>hours throttled</th><th>credits left unused</th></tr></thead><tbody id="cmp-rows"></tbody></table>
+      <p class="muted small">Same month, same usage. Unused credits can't be cashed out.</p>
+    </section>
+  </main>
+  <div id="tip" class="tip" hidden></div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
