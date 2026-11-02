@@ -12,6 +12,8 @@ export interface Deployment {
   priceId: string;
   /** Farm reward units (24 decimals) per second per staked NEAR. */
   farmRewardRate: string;
+  /** One-off price used for emergency credit top-ups (vault v2). */
+  topupPriceId?: string;
 }
 
 const FILE = (network: string) => path.resolve(import.meta.dirname, `../deployments/${network}.json`);
