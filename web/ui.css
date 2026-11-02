@@ -1,0 +1,39 @@
+/* Shared look for the Ballast site: white paper, one ink, monospace, 1px rules. After Pixel Plays. */
+:root {
+  --ink: #1c1b19;
+  --muted: #8b877f;
+  --faint: #d9d6cf;
+  --paper: #fff;
+  --wash: #f6f5f2;
+  --ai: #6a5ad0;      /* NEAR AI side: credits */
+  --yield: #2f8f6a;   /* yield side: NEAR rewards */
+  --flight: #c98a2c;  /* unbonding, on the ferry */
+  --alarm: #d03b3b;
+  --good: #0c8a0c;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); }
+body { font: 13px/1.45 ui-monospace, "Cascadia Mono", "SF Mono", Consolas, Menlo, monospace; }
+a { color: inherit; text-underline-offset: 2px; }
+h1, h2, h3 { font: inherit; font-weight: 600; margin: 0; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.link { font: inherit; color: var(--muted); background: none; border: 0; padding: 10px; margin: 0; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.link:hover, .link:focus-visible, .link[aria-pressed="true"], .link[aria-expanded="true"] { color: var(--ink); }
+.link.strong { color: var(--ink); }
+.link.strong:hover { text-decoration: underline; }
+.button { display: inline-block; font: inherit; color: var(--paper); background: var(--ink); border: 1px solid var(--ink); padding: 8px 12px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.button:hover, .button:focus-visible { background: var(--paper); color: var(--ink); outline: none; }
+.button.ghost { background: var(--paper); color: var(--ink); }
+.button.ghost:hover, .button.ghost:focus-visible { background: var(--ink); color: var(--paper); }
+.button:disabled { opacity: .4; cursor: default; }
+.panel { background: var(--paper); border: 1px solid var(--ink); padding: 16px; color: var(--ink); font: inherit; }
+dialog.panel { width: min(380px, calc(100vw - 32px)); }
+dialog.panel::backdrop { background: rgba(255, 255, 255, .72); }
+dialog.panel h2 { margin-bottom: 10px; }
+dialog.panel ol { margin: 0 0 8px; padding-left: 18px; }
+dialog.panel li { margin-bottom: 8px; }
+.row { display: flex; gap: 8px; justify-content: space-between; align-items: center; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
