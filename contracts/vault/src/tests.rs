@@ -277,7 +277,8 @@ fn unstake_yield_to_fund_ai() {
     let mut v = new_vault();
     as_agent(1, 10);
     synced(&mut v, 60, 0, 40, 0);
-    v.rebalance(U128(70 * NEAR), report(), Some(Action::UnstakeYield { amount: U128(10 * NEAR) }));
+    // 9, not 10: the agent's own call holds ~0.3 NEAR of prepaid gas (300 Tgas in tests) that counts as liquid.
+    v.rebalance(U128(70 * NEAR), report(), Some(Action::UnstakeYield { amount: U128(9 * NEAR) }));
 }
 
 #[test]
@@ -461,4 +462,23 @@ fn migrate_from_v1() {
     assert!(s.policy.budget_micro_usd_week.is_none());
     assert_eq!(s.yield_earned.0, 0, "existing yield is treated as principal");
     assert!(s.last_report.is_some());
+}
+
+#[test]
+fn self_signed_calls_see_the_gas_float() {
+    // The agent's own transaction holds its prepaid gas (300 Tgas here, ~0.3 NEAR) out of the vault's balance.
+    let mut v = new_vault();
+    as_agent(101, 10);
+    v.rebalance(U128(60 * NEAR), report(), None);
+    v.step(Action::StakeYield { amount: U128(40 * NEAR + NEAR / 4) });
+}
+
+#[test]
+#[should_panic(expected = "liquid NEAR is needed for the AI target")]
+fn others_do_not_get_the_gas_float() {
+    let mut v = new_vault();
+    as_agent(101, 10);
+    v.rebalance(U128(60 * NEAR), report(), None);
+    ctx(owner(), 0, 101, 11);
+    v.step(Action::StakeYield { amount: U128(40 * NEAR + NEAR / 4) });
 }
