@@ -180,6 +180,11 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
   ([tx](https://testnet.nearblocks.io/txns/G4gf8KkVrL4ox6Y92wvym4gyurES1b9TTWu3LnPeezEt)), then `StakeAi` 1.339 NEAR
   ([tx](https://testnet.nearblocks.io/txns/EoSJuF7goWvcyidzQyeZqMFCXs3B7GDVHxbKAdLm4nCB)). The AI side went from
   8.707 to 10.045 NEAR against the 10.115 target; the gap left is under the 0.5 NEAR dust threshold.
+* **Emergency top-up**: in a later emergency, once the vault's earned-yield allowance was above the pack price, the
+  agent sent `BuyCredits` for 1 pack at 0.001 NEAR
+  ([tx](https://testnet.nearblocks.io/txns/8mFHgGMQyLHurwUoScuvuGoJLRmDUQtX5Un9kTnxFDC6)). NEAR AI's staking
+  contract records it as purchase `pay_yDKU2Hz75Ldfy2vKg` on price `price_40isIJHJPGFpOJLkn4QbxgGB`. It was paid
+  from yield the vault had earned, not from principal.
 * **Full exit** on `vault-exit`: the owner called `exit`; a stranger account unstaked both sides; after the epoch
   the stranger withdrew 1.5 NEAR from NEAR AI's staking contract (`withdraw(validator_id)`) and 0.5 NEAR from the
   yield pool; the owner then withdrew 2.304 NEAR to their own account.
@@ -191,9 +196,9 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
   organization. Plan B, if so: the owner's own account stakes and approves each move.
 * The yield side is our test pool, not a live validator or liquid staking token. Swapping a LiNEAR position for
   instant top-ups is a stretch goal.
-* Top-ups are paid only from yield earned since v2 tracking began, and the testnet vault's yield side is small,
-  so on testnet the top-up has run in unit tests but not yet on-chain. On testnet, packs are a 0.001 NEAR one-off
-  price on the farm product and the meter credits them at the NEAR price; on mainnet NEAR AI sells credits itself.
+* Top-ups are paid only from yield earned since v2 tracking began, so a small vault can only afford one once its
+  yield builds up. On testnet, packs are a 0.001 NEAR one-off price on the farm product and the meter credits them
+  at the NEAR price; on mainnet NEAR AI sells credits itself.
 * The agent signs as the vault, so each call's prepaid gas (about 0.45 NEAR for a 450 Tgas staking call, held
   at a pessimistic price and mostly refunded) is out of the vault's balance while the call runs. The vault counts
   that held gas as liquid in its own checks (`liquid_in_call`, capped at half the 1 NEAR reserve); before 0.2.1
@@ -246,7 +251,8 @@ used as they are:
 | Vault contract v2 on testnet, upgraded in place from v1 | Mainnet check: a small stake into NEAR AI's real farm from a contract sub-account, with credits showing in the NEAR AI console |
 | Vault staking into NEAR AI's real `staking-contract` from a contract sub-account (testnet) | Demo video |
 | Agent loop: forecast, rebalance across epochs, emergency path, on-chain budget, weekly digest | A real wallet-signed transaction from the dashboard |
-| Trust checks and a full exit by a stranger account, on testnet | A `BuyCredits` top-up on-chain (unit-tested only) |
+| Trust checks and a full exit by a stranger account, on testnet | |
+| Emergency `BuyCredits` top-up on testnet, paid from earned yield | |
 | Simulator, CI, website and dashboard on Vercel | |
 
 ## Repository
