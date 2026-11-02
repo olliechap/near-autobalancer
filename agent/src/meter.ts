@@ -58,8 +58,13 @@ export class Meter {
     return this.s.events.reduce((a, e) => a + e.usd, 0);
   }
 
-  balance(earnedUnits: bigint, usdPerUnit: number): number {
-    return Math.max(0, (Number(earnedUnits) / 1e24) * usdPerUnit - this.spent());
+  /** Credits earned on-chain (farm reward units) plus one-off packs bought, minus usage. */
+  balance(earnedUnits: bigint, usdPerUnit: number, purchasedUsd = 0): number {
+    return Math.max(0, this.earnedUsd(earnedUnits, usdPerUnit, purchasedUsd) - this.spent());
+  }
+
+  earnedUsd(earnedUnits: bigint, usdPerUnit: number, purchasedUsd = 0): number {
+    return (Number(earnedUnits) / 1e24) * usdPerUnit + purchasedUsd;
   }
 
   /** Rolling 24h usage windows ending now, oldest first, scaled to $/day for a partial first window. */
