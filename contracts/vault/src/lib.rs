@@ -46,8 +46,12 @@ pub struct Policy {
     pub cooldown_sec: U64,
     /// Smallest target change the agent may make, in yoctoNEAR (anti-churn).
     pub min_move: U128,
-    /// Cap on one-off credit top-ups paid from earned yield (recorded for the agent; MVP does not buy credits).
+    /// Cap on one-off credit top-ups (`BuyCredits`) over any rolling 30 days, in yoctoNEAR. Top-ups are also
+    /// limited to yield the vault has earned, so they never spend principal.
     pub topup_cap: U128,
+    /// The owner's AI budget in micro-dollars per week; the agent reads it as the floor for its burn forecast.
+    #[serde(default)]
+    pub budget_micro_usd_week: Option<U64>,
 }
 
 #[derive(Clone)]
@@ -72,6 +76,9 @@ pub enum Action {
     StakeYield { amount: U128 },
     UnstakeYield { amount: U128 },
     WithdrawYield { amount: U128 },
+    /// Emergency top-up: buy one-off credits through the staking contract's `pay`. `amount` is the exact total
+    /// (price x quantity) to attach.
+    BuyCredits { price_id: String, quantity: U64, amount: U128 },
 }
 
 // --- shapes of the external views we read (only the fields we use) ---
@@ -119,6 +126,11 @@ pub struct VaultView {
     pub exiting: bool,
     pub busy: bool,
     pub last_report: Option<UsageReport>,
+    /// NEAR the yield side has earned since the vault started tracking it (v2).
+    pub yield_earned: U128,
+    /// Top-ups spent in the current 30-day window, and what is still allowed now.
+    pub topup_spent_window: U128,
+    pub topup_available: U128,
 }
 
 #[derive(PanicOnDefault)]
@@ -147,7 +159,17 @@ pub struct Vault {
     exiting: bool,
     busy: bool,
     last_report: Option<UsageReport>,
+
+    // v2
+    /// Net NEAR moved into the yield side (stakes minus withdrawals); value above this is earned yield.
+    yield_net_in: i128,
+    topup_window_start_ns: u64,
+    topup_spent_window: u128,
+    /// All top-ups ever paid; they may not exceed earned yield.
+    topup_total: u128,
 }
+
+const TOPUP_WINDOW_NS: u64 = 30 * 24 * 3600 * 1_000_000_000;
 
 #[near]
 impl Vault {
@@ -182,7 +204,57 @@ impl Vault {
             exiting: false,
             busy: false,
             last_report: None,
+            yield_net_in: 0,
+            topup_window_start_ns: 0,
+            topup_spent_window: 0,
+            topup_total: 0,
         }
+    }
+
+    /// Upgrade a v1 vault's state in place (called by the owner's deploy transaction, on the vault account).
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate() -> Self {
+        let old: v1::Vault = env::state_read().expect("no v1 state");
+        let yield_net_in = (old.yield_staked + old.yield_unstaking) as i128; // treat what is there now as principal
+        Self {
+            owner_id: old.owner_id,
+            agent_id: old.agent_id,
+            staking_contract: old.staking_contract,
+            ai_product_id: old.ai_product_id,
+            ai_validator_id: old.ai_validator_id,
+            yield_pool: old.yield_pool,
+            policy: Policy {
+                min_ai_bps: old.policy.min_ai_bps,
+                max_ai_bps: old.policy.max_ai_bps,
+                buffer_days: old.policy.buffer_days,
+                cooldown_sec: old.policy.cooldown_sec,
+                min_move: old.policy.min_move,
+                topup_cap: old.policy.topup_cap,
+                budget_micro_usd_week: None,
+            },
+            reserve: old.reserve,
+            ai_staked: old.ai_staked,
+            ai_unstaking: old.ai_unstaking,
+            ai_withdrawable: old.ai_withdrawable,
+            yield_staked: old.yield_staked,
+            yield_unstaking: old.yield_unstaking,
+            yield_can_withdraw: old.yield_can_withdraw,
+            target_ai: old.target_ai,
+            last_target_ns: old.last_target_ns,
+            last_sync_ns: old.last_sync_ns,
+            exiting: old.exiting,
+            busy: old.busy,
+            last_report: old.last_report,
+            yield_net_in,
+            topup_window_start_ns: 0,
+            topup_spent_window: 0,
+            topup_total: 0,
+        }
+    }
+
+    pub fn get_version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
     }
 
     // ------------------------------------------------------------------ owner
@@ -353,6 +425,9 @@ impl Vault {
             exiting: self.exiting,
             busy: self.busy,
             last_report: self.last_report.clone(),
+            yield_earned: U128(self.yield_earned()),
+            topup_spent_window: U128(self.window_spent()),
+            topup_available: U128(self.topup_available()),
         }
     }
 
@@ -361,6 +436,18 @@ impl Vault {
     #[private]
     pub fn on_action(&mut self, action: Action) -> Promise {
         let ok = near_sdk::is_promise_success();
+        if ok {
+            match &action {
+                Action::StakeYield { amount } => self.yield_net_in += amount.0 as i128,
+                Action::WithdrawYield { amount } => self.yield_net_in -= amount.0 as i128,
+                Action::BuyCredits { amount, .. } => {
+                    self.roll_window();
+                    self.topup_spent_window += amount.0;
+                    self.topup_total += amount.0;
+                }
+                _ => {}
+            }
+        }
         emit(if ok { "step" } else { "step_failed" }, json!({ "action": action }));
         // Still busy: release happens in on_sync.
         self.sync_promise()
@@ -429,6 +516,30 @@ impl Vault {
         self.liquid() + self.ai_staked + self.ai_unstaking + self.yield_staked + self.yield_unstaking
     }
 
+    /// Yield earned since tracking began: current yield-side value above the net NEAR moved in.
+    fn yield_earned(&self) -> u128 {
+        let value = (self.yield_staked + self.yield_unstaking) as i128;
+        (value - self.yield_net_in).max(0) as u128
+    }
+
+    fn window_spent(&self) -> u128 {
+        if env::block_timestamp().saturating_sub(self.topup_window_start_ns) >= TOPUP_WINDOW_NS { 0 } else { self.topup_spent_window }
+    }
+
+    fn roll_window(&mut self) {
+        if env::block_timestamp().saturating_sub(self.topup_window_start_ns) >= TOPUP_WINDOW_NS {
+            self.topup_window_start_ns = env::block_timestamp();
+            self.topup_spent_window = 0;
+        }
+    }
+
+    /// What a top-up may spend now: inside the 30-day cap, and never more than unspent earned yield.
+    fn topup_available(&self) -> u128 {
+        let by_cap = self.policy.topup_cap.0.saturating_sub(self.window_spent());
+        let by_yield = self.yield_earned().saturating_sub(self.topup_total);
+        by_cap.min(by_yield)
+    }
+
     fn desired_ai(&self) -> u128 {
         if self.exiting { 0 } else { self.target_ai }
     }
@@ -481,6 +592,14 @@ impl Vault {
                 require!(amount.0 > 0 && amount.0 <= self.yield_unstaking, "amount exceeds unstaked yield");
                 ext::pool(self.yield_pool.clone(), NearToken::from_yoctonear(0), GAS_POOL_CALL).withdraw(amount)
             }
+            Action::BuyCredits { price_id, quantity, amount } => {
+                require!(!self.exiting, "vault is exiting");
+                require!(amount.0 > 0 && amount.0 <= liquid, "not enough liquid NEAR");
+                require!(amount.0 <= self.topup_available(), "top-up exceeds the cap or earned yield");
+                // The staking contract checks amount == price x quantity and refunds us if not.
+                ext::staking(self.staking_contract.clone(), NearToken::from_yoctonear(amount.0), GAS_POOL_CALL)
+                    .pay(Some(price_id), None, quantity)
+            }
         };
         self.busy = true;
         p.then(ext::this().with_static_gas(GAS_ON_ACTION).on_action(action_for_cb))
@@ -526,6 +645,7 @@ mod ext {
         fn stake(&mut self, product_id: String, price_id: Option<String>);
         fn unstake(&mut self, product_id: String, amount: Option<U128>);
         fn withdraw(&mut self, validator_id: AccountId);
+        fn pay(&mut self, price_id: Option<String>, product_id: Option<String>, quantity: U64);
         fn get_farm_position(&self, account_id: AccountId, product_id: String);
         fn get_account_pending_unstake(&self, account_id: AccountId, validator_id: AccountId);
     }
@@ -549,6 +669,45 @@ mod ext {
 
     pub fn this() -> VaultExt {
         Vault::ext(env::current_account_id())
+    }
+}
+
+/// The v1 state layout, kept only so `migrate` can read it.
+mod v1 {
+    use super::*;
+
+    #[near(serializers = [borsh])]
+    pub struct Policy {
+        pub min_ai_bps: u16,
+        pub max_ai_bps: u16,
+        pub buffer_days: u16,
+        pub cooldown_sec: U64,
+        pub min_move: U128,
+        pub topup_cap: U128,
+    }
+
+    #[near(serializers = [borsh])]
+    pub struct Vault {
+        pub owner_id: AccountId,
+        pub agent_id: Option<AccountId>,
+        pub staking_contract: AccountId,
+        pub ai_product_id: String,
+        pub ai_validator_id: AccountId,
+        pub yield_pool: AccountId,
+        pub policy: Policy,
+        pub reserve: u128,
+        pub ai_staked: u128,
+        pub ai_unstaking: u128,
+        pub ai_withdrawable: u128,
+        pub yield_staked: u128,
+        pub yield_unstaking: u128,
+        pub yield_can_withdraw: bool,
+        pub target_ai: u128,
+        pub last_target_ns: u64,
+        pub last_sync_ns: u64,
+        pub exiting: bool,
+        pub busy: bool,
+        pub last_report: Option<UsageReport>,
     }
 }
 

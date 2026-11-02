@@ -26,7 +26,8 @@ fn policy() -> Policy {
         buffer_days: 7,
         cooldown_sec: U64(3_600),
         min_move: U128(NEAR),
-        topup_cap: U128(0),
+        topup_cap: U128(2 * NEAR),
+        budget_micro_usd_week: Some(U64(100_000_000)),
     }
 }
 
@@ -337,4 +338,127 @@ fn bad_policy_rejected() {
     p.min_ai_bps = 9_500;
     ctx(owner(), 1, 101, 10);
     v.set_policy(p);
+}
+
+// ---------------------------------------------------------------- v2: top-ups and migration
+
+fn buy(amount: u128) -> Action {
+    Action::BuyCredits { price_id: "price_x".into(), quantity: U64(1), amount: U128(amount) }
+}
+
+/// Vault with 40 NEAR staked to yield (principal), now worth `worth` NEAR, and 10 NEAR liquid.
+fn vault_with_yield(worth: u128) -> Vault {
+    let mut v = new_vault();
+    v.yield_net_in = (40 * NEAR) as i128;
+    as_agent(11, 10);
+    synced(&mut v, 50, 0, worth, 0);
+    v
+}
+
+#[test]
+fn earned_yield_counts_growth_only() {
+    let v = vault_with_yield(43);
+    assert_eq!(v.get_state().yield_earned.0, 3 * NEAR);
+    // Cap is 2 NEAR per 30 days, earned is 3: the cap binds.
+    assert_eq!(v.get_state().topup_available.0, 2 * NEAR);
+}
+
+#[test]
+fn topup_within_cap_and_earnings() {
+    let mut v = vault_with_yield(43);
+    v.step(buy(NEAR));
+}
+
+#[test]
+#[should_panic(expected = "top-up exceeds the cap or earned yield")]
+fn topup_over_cap_rejected() {
+    let mut v = vault_with_yield(43);
+    v.step(buy(3 * NEAR));
+}
+
+#[test]
+#[should_panic(expected = "top-up exceeds the cap or earned yield")]
+fn topup_never_spends_principal() {
+    let mut v = vault_with_yield(40); // nothing earned yet
+    v.step(buy(NEAR / 10));
+}
+
+#[test]
+fn topup_spend_accrues_and_window_resets() {
+    let mut v = vault_with_yield(45);
+    v.busy = true;
+    v.on_action(buy(2 * NEAR)); // successful purchase (test promise result is Successful)
+    v.busy = false;
+    assert_eq!(v.get_state().topup_spent_window.0, 2 * NEAR);
+    assert_eq!(v.get_state().topup_available.0, 0);
+    as_agent(11, 10 + 31 * 24 * 3600);
+    // New window: cap is back, and 3 of the 5 earned NEAR remain unspent.
+    assert_eq!(v.get_state().topup_available.0, 2 * NEAR);
+}
+
+#[test]
+#[should_panic(expected = "vault is exiting")]
+fn no_topups_while_exiting() {
+    let mut v = vault_with_yield(43);
+    ctx(owner(), 1, 11, 10);
+    v.exit();
+    as_agent(11, 11);
+    v.step(buy(NEAR));
+}
+
+#[test]
+fn stake_and_withdraw_yield_move_principal() {
+    let mut v = new_vault();
+    ctx(vault_id(), 0, 101, 10);
+    v.busy = true;
+    v.on_action(Action::StakeYield { amount: U128(40 * NEAR) });
+    assert_eq!(v.yield_net_in, (40 * NEAR) as i128);
+    v.busy = true;
+    v.on_action(Action::WithdrawYield { amount: U128(5 * NEAR) });
+    assert_eq!(v.yield_net_in, (35 * NEAR) as i128);
+}
+
+#[test]
+fn policy_json_without_budget_still_parses() {
+    let p: Policy = near_sdk::serde_json::from_str(
+        r#"{"min_ai_bps":0,"max_ai_bps":9000,"buffer_days":3,"cooldown_sec":"60","min_move":"0","topup_cap":"0"}"#,
+    )
+    .unwrap();
+    assert!(p.budget_micro_usd_week.is_none());
+}
+
+#[test]
+fn migrate_from_v1() {
+    ctx(vault_id(), 0, 101, 10);
+    let old = v1::Vault {
+        owner_id: owner(),
+        agent_id: None,
+        staking_contract: id("stake.ballast.testnet"),
+        ai_product_id: "prod_ai".into(),
+        ai_validator_id: id("pool-ai.ballast.testnet"),
+        yield_pool: id("pool-yield.ballast.testnet"),
+        policy: v1::Policy { min_ai_bps: 0, max_ai_bps: 9000, buffer_days: 7, cooldown_sec: U64(60), min_move: U128(NEAR / 2), topup_cap: U128(0) },
+        reserve: NEAR,
+        ai_staked: 8 * NEAR,
+        ai_unstaking: 0,
+        ai_withdrawable: 0,
+        yield_staked: 3 * NEAR,
+        yield_unstaking: 0,
+        yield_can_withdraw: true,
+        target_ai: 8 * NEAR,
+        last_target_ns: 5,
+        last_sync_ns: 6,
+        exiting: false,
+        busy: false,
+        last_report: Some(report()),
+    };
+    env::state_write(&old);
+    let v = Vault::migrate();
+    let s = v.get_state();
+    assert_eq!(s.ai_staked.0, 8 * NEAR);
+    assert_eq!(s.target_ai.0, 8 * NEAR);
+    assert_eq!(s.policy.max_ai_bps, 9000);
+    assert!(s.policy.budget_micro_usd_week.is_none());
+    assert_eq!(s.yield_earned.0, 0, "existing yield is treated as principal");
+    assert!(s.last_report.is_some());
 }
