@@ -59,6 +59,12 @@ function params(state: any) {
   };
 }
 
+/**
+ * The agent signs as the vault, so the gas it prepays (charged up front at a pessimistic price, ~0.5 NEAR for
+ * 450 Tgas) leaves the vault's balance while the call runs. Don't plan to stake that NEAR.
+ */
+const GAS_HEADROOM_NEAR = Number(process.env.GAS_HEADROOM_NEAR ?? "0.6");
+
 function actionArg(a: Action) {
   switch (a.kind) {
     case "WithdrawAi":
@@ -95,7 +101,7 @@ export async function tick(opts: { act: boolean } = { act: true }) {
   const txs: string[] = [];
   if (p.move && Math.abs(p.targetAiNear - currentTarget) >= params(state).churnNear) {
     target = Math.floor(p.targetAiNear * 1000) / 1000;
-    const a = nextAction(books, target);
+    const a = nextAction(books, target, 1, 0.5, GAS_HEADROOM_NEAR);
     const report = {
       burn_micro_usd_per_day: String(Math.round(p.burnUsdDay * 1e6)),
       credit_balance_micro_usd: String(Math.round(creditUsd * 1e6)),
@@ -109,7 +115,7 @@ export async function tick(opts: { act: boolean } = { act: true }) {
   }
   // Keep stepping toward the on-chain target until there is nothing left to do this epoch.
   for (let i = 0; i < 5; i++) {
-    const a = nextAction(books, target);
+    const a = nextAction(books, target, 1, 0.5, GAS_HEADROOM_NEAR);
     if (!a) break;
     const r = await call(V, V, "step", { action: actionArg(a) }, { gas: gasFor(a) });
     txs.push(r.txHash);

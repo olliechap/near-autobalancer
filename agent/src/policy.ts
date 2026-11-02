@@ -158,18 +158,23 @@ export type Action =
   | { kind: "UnstakeYield"; amount: number };
 
 /** The single next step toward `target`, or null if there is nothing useful to do this epoch. */
-export function nextAction(v: VaultBooks, target: number, minStake = 1, dust = 0.5): Action | null {
+/**
+ * `headroom` is liquid NEAR not to stake: when the agent signs as the vault, the gas it prepays leaves the
+ * vault's balance while the call runs. It only limits stakes; the vault still counts that NEAR as liquid.
+ */
+export function nextAction(v: VaultBooks, target: number, minStake = 1, dust = 0.5, headroom = 0): Action | null {
   if (v.aiWithdrawable > dust) return { kind: "WithdrawAi" };
   if (v.yieldUnstaking > dust && v.yieldCanWithdraw) return { kind: "WithdrawYield", amount: v.yieldUnstaking };
   const gap = target - v.aiStaked;
-  if (gap >= minStake && v.liquid >= minStake) return { kind: "StakeAi", amount: Math.min(gap, v.liquid) };
+  const stakeable = Math.max(0, v.liquid - headroom);
+  if (gap >= minStake && stakeable >= minStake) return { kind: "StakeAi", amount: Math.min(gap, stakeable) };
   if (gap > dust) {
     // Free NEAR from the yield side, counting what is already on its way back.
     const need = gap - v.liquid - v.yieldUnstaking - v.aiUnstaking;
     if (need > dust && v.yieldStaked > dust) return { kind: "UnstakeYield", amount: Math.min(need, v.yieldStaked) };
   }
   if (-gap > dust) return { kind: "UnstakeAi", amount: -gap };
-  const spare = v.liquid - Math.max(0, gap);
+  const spare = stakeable - Math.max(0, gap);
   if (spare > dust) return { kind: "StakeYield", amount: spare };
   return null;
 }
