@@ -168,10 +168,10 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
 * Top-ups are paid only from yield earned since v2 tracking began, and the testnet vault's yield side is small,
   so on testnet the top-up has run in unit tests but not yet on-chain. On testnet, packs are a 0.001 NEAR one-off
   price on the farm product and the meter credits them at the NEAR price; on mainnet NEAR AI sells credits itself.
-* The agent signs as the vault, so the gas it prepays (about 0.5 NEAR for a 450 Tgas staking call, charged up front
-  at a pessimistic price and mostly refunded) leaves the vault's balance while the call runs. The agent keeps
-  0.6 NEAR of headroom when staking (`GAS_HEADROOM_NEAR`), and a target's share is computed on a total that is
-  briefly a little low, which errs toward a lower share.
+* The agent signs as the vault, so each call's prepaid gas (about 0.45 NEAR for a 450 Tgas staking call, held
+  at a pessimistic price and mostly refunded) is out of the vault's balance while the call runs. The vault counts
+  that held gas as liquid in its own checks (`liquid_in_call`, capped at half the 1 NEAR reserve); before 0.2.1
+  this made full-balance stakes and 90% targets fail on testnet.
 * The agent's function-call key has a 1 NEAR gas allowance; the owner re-adds the key when it runs out.
 
 ## Repository
