@@ -7,5 +7,6 @@
   "vault": "vault.ballast-11012319.testnet",
   "productId": "prod_6TSXAT9FNIPqAs",
   "priceId": "price_3XvBcJ5KmMwAwgynNFfo9HIH",
-  "farmRewardRate": "3802570537683474"
+  "farmRewardRate": "3802570537683474",
+  "topupPriceId": "price_40isIJHJPGFpOJLkn4QbxgGB"
 }

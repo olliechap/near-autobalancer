@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { plan, nextAction, creditRateFromFarm, forecastBurn, DEFAULT_PARAMS, type Market } from "../src/policy.ts";
+import { plan, nextAction, topupPacks, creditRateFromFarm, forecastBurn, DEFAULT_PARAMS, type Market } from "../src/policy.ts";
 import { run, defaultScenario } from "../src/sim.ts";
 
 const m: Market = { nearUsd: 2.5, apy: 0.045, commission: 0.05, creditUsdPerNearDay: creditRateFromFarm("3802570537683474") };
@@ -78,4 +78,40 @@ test("simulator: Ballast avoids throttling that set-and-forget suffers, and out-
   assert.equal(b.throttledHours, 0);
   assert.ok(s.throttledHours > 0);
   assert.ok(b.yieldEarnedNear > a.yieldEarnedNear + 50);
+});
+
+test("nextAction: gas headroom limits stakes but not the yield unstake the vault allows", () => {
+  const books = { liquid: 2.3, aiStaked: 7, aiUnstaking: 0, aiWithdrawable: 0, yieldStaked: 2.657, yieldUnstaking: 0, yieldCanWithdraw: false };
+  assert.deepEqual(nextAction(books, 9.3, 1, 0.5, 0.6), { kind: "StakeAi", amount: 2.3 - 0.6 });
+  // 0.6 liquid left and a 0.6 gap: the vault counts that liquid, so no yield unstake and nothing to do.
+  assert.equal(nextAction({ ...books, liquid: 0.6, aiStaked: 8.7 }, 9.3, 1, 0.5, 0.6), null);
+});
+
+test("topupPacks: covers the shortfall until new stake lands, within what the vault allows", () => {
+  const obs = { totalNear: 100_000, aiNear: 1_000, creditUsd: 5, dailyUsageUsd: [20, 20] };
+  const p = plan(obs, m);
+  assert.equal(p.emergency, true);
+  const days = DEFAULT_PARAMS.unlockDays + 1;
+  const shortfall = days * (p.burnUsdDay - m.creditUsdPerNearDay * 1_000) - 5;
+  const packs = topupPacks(p, obs, m, DEFAULT_PARAMS, 1, 1_000);
+  assert.equal(packs, Math.ceil(shortfall / m.nearUsd));
+  assert.equal(topupPacks(p, obs, m, DEFAULT_PARAMS, 1, 3), 3, "limited by the vault's allowance");
+  const calm = plan({ ...obs, aiNear: 90_000, creditUsd: 500 }, m);
+  assert.equal(topupPacks(calm, { ...obs, aiNear: 90_000, creditUsd: 500 }, m, DEFAULT_PARAMS, 1, 1_000), 0);
+});
+
+import { digestOf, type LogEntry } from "../src/log.ts";
+
+test("digest: covered usage, earned yield and the moves in the window", () => {
+  const base: LogEntry = {
+    t: Date.UTC(2026, 10, 2), totalNear: 60_000, aiNear: 40_000, yieldValueNear: 20_000, yieldEarnedNear: 0,
+    creditUsd: 50, spentUsd: 0, earnedUsd: 50, burnUsdDay: 14, runwayDays: null, targetAiNear: 40_000, actions: [],
+  };
+  const later: LogEntry = {
+    ...base, t: base.t + 3 * 86_400_000, aiNear: 41_800, yieldEarnedNear: 2.1, spentUsd: 100, earnedUsd: 146, creditUsd: 46,
+    actions: [{ kind: "rebalance", tx: "abc", ok: true, fromNear: 40_000, toNear: 41_800, reason: "usage spiked" }],
+  };
+  const d = digestOf([base, later], 7, 2.5);
+  assert.match(d, /Covered \$100\.00 of \$100\.00 in usage \(100%\); earned 2\.1000 NEAR/);
+  assert.match(d, /Moved 1800 NEAR toward AI \(AI target 40000 → 41800\) on Thursday,? 5 Nov: usage spiked/);
 });

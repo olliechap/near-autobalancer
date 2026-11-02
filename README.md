@@ -17,8 +17,8 @@ Status: MVP running on NEAR **testnet**. Built for the NEAR hackathon (Agent Eco
 Needs Rust 1.86 (pinned in `rust-toolchain.toml`) and Node 22.18 or later. No NEAR account needed for these.
 
 ```bash
-cargo test                                   # 32 contract unit tests (vault + pool)
-cd agent && npm install && npm test          # 12 policy and simulator tests
+cargo test                                   # 41 contract unit tests (vault + pool)
+cd agent && npm install && npm test          # 15 policy, simulator and digest tests
 node src/simulate.ts                         # 30 days of usage, three strategies, in under a second
 ```
 
@@ -51,14 +51,20 @@ Flags: `--vault 60000 --budget 100 --spike-day 3 --spike 2 --spike-end 0 --near-
 ```
 
 * **Vault contract** (`contracts/vault`, Rust, near-sdk 5.26). One per user, on a sub-account they own. Stores the
-  owner, the policy (min and max AI share, buffer days, cooldown, minimum move), the AI target, and the two
-  contract ids. The agent sets a target and steps toward it one action at a time (`StakeAi`, `UnstakeAi`,
-  `WithdrawAi`, `StakeYield`, `UnstakeYield`, `WithdrawYield`). Every check only lets funds move *toward* the
+  owner, the policy (min and max AI share, buffer days, cooldown, minimum move, top-up cap, weekly AI budget), the
+  AI target, and the two contract ids. The agent sets a target and steps toward it one action at a time
+  (`StakeAi`, `UnstakeAi`, `WithdrawAi`, `StakeYield`, `UnstakeYield`, `WithdrawYield`, and the emergency
+  `BuyCredits`). Every check only lets funds move *toward* the
   target, so a bad agent can stall the vault but not drain or redirect it. After each action the vault re-reads its
   balances from the two contracts' own views (`sync`). Every move emits a NEP-297 event (`standard: "ballast"`).
 * **Agent key.** The agent signs with a function-call access key on the vault account, limited to `rebalance`,
   `step` and `sync`. Function-call keys cannot attach deposits or call other methods, and `withdraw` sends only to
   the owner and needs 1 yoctoNEAR attached. On testnet we tried all three attacks; see "Trust" below.
+* **Emergency top-up.** `BuyCredits` buys one-off credit packs through the staking contract's `pay`. The vault
+  allows it only up to `topup_cap` per rolling 30 days and only out of yield it has earned (yield-side value above
+  the NEAR moved in), so a top-up never spends principal.
+* **Upgrades.** `migrate` moves a v1 vault's state to v2 in the same transaction as the code deploy
+  (`agent/scripts/upgrade-vault.ts`); the testnet vault was upgraded in place.
 * **Exit.** The owner calls `exit`. From then on the agent can't set targets and *anyone* may call `step` to
   unwind both sides, so nobody can block an exit. The owner then calls `withdraw`.
 * **AI side.** NEAR AI's own `staking-contract` from
@@ -68,7 +74,10 @@ Flags: `--vault 60000 --budget 100 --spike-day 3 --spike 2 --spike-end 0 --near-
 * **Yield side, and the pool behind the AI farm.** `contracts/pool`: a small staking pool with the standard
   interface (`deposit_and_stake`, `unstake`, `withdraw`, `get_account`), a fixed APY and a configurable unbond.
 * **Agent** (`agent/src/agent.ts`, TypeScript on Node). Each tick: sync, read the farm position, pending unstakes
-  and pool balance, read the credit meter, run the policy, then `rebalance` and `step` as needed.
+  and pool balance, read the credit meter, run the policy, buy emergency credits if needed, then `rebalance` and
+  `step`. The weekly budget comes from the vault's policy (`budget_micro_usd_week`), so the owner sets it on-chain.
+  Each tick is logged to `agent/state/<vault>.log.jsonl`; `node src/agent.ts digest` turns it into the weekly
+  digest ("Covered $X of $Y in usage; earned Z NEAR; moved N NEAR toward AI on Tuesday: ...").
 
 ### The policy (`agent/src/policy.ts`)
 
@@ -81,9 +90,11 @@ NEAR). At NEAR AI's rate that is **c = $0.000329 per NEAR per day**, whatever th
 3. Buffer **B = buffer days × b** (default 3). If credits are below B, add stake to refill the gap over 7 days.
    If credits are above 2B, return the excess to yield (trims are slow to undo, so they need a full double buffer).
 4. Clamp to the owner's min and max AI share. Report coverage honestly when the vault is too small.
-5. Don't churn: move only when the change exceeds 10% of the vault and the vault's `min_move`, unless runway is
-   shorter than the time it takes to add stake (unbond + 1 day), which is an emergency.
-6. Re-run every epoch.
+5. Emergency: if runway is shorter than the time it takes to add stake (unbond + 1 day), buy just enough one-off
+   packs to bridge that gap, within what the vault allows, as well as adding stake.
+6. Don't churn: move only when the change exceeds 10% of the vault and the vault's `min_move`, except in an
+   emergency.
+7. Re-run every epoch.
 
 The simulator picked the defaults: a 7-day buffer avoided throttling too, but parked about 10 points more of the
 vault in credits (`node agent/scripts/sweep.ts` reruns the sweep).
@@ -117,6 +128,8 @@ BALLAST_ROOT=<you>.testnet node scripts/deploy-testnet.ts   # keys read from ~/.
 node src/agent.ts once                                       # one agent tick: sync, plan, rebalance, step
 node src/agent.ts usage 0.01                                 # record a usage spike on the testnet credit meter
 node src/agent.ts loop 600                                   # run the agent every 10 minutes
+node src/agent.ts digest 7                                   # what the agent did this week, in plain words
+node scripts/upgrade-vault.ts                                # upgrade a v1 vault to v2 and set up top-ups
 node scripts/trust-demo.ts                                   # the three attacks below
 node scripts/exit-demo.ts setup|exit|finish                  # full exit on a second vault
 ```
@@ -129,13 +142,21 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
 
 * **Vault on a contract sub-account stakes into NEAR AI's farm** (the concept's day-1 risk, testnet side):
   rebalance + `StakeAi` 7 NEAR, then `StakeYield` 4.5 NEAR; the farm position accrues reward units.
-* **Agent tick**: forecast burn needed 9.3 NEAR on the AI side, so the agent set the target and sent
-  `UnstakeYield` 1.843 NEAR to fund it once it unbonds.
+* **Agent moves yield to AI across an epoch**: forecast burn needed 9.3 NEAR on the AI side, so the agent set the
+  target and sent `UnstakeYield` 1.843 NEAR. After the epoch it sent `WithdrawYield` 1.843 and `StakeAi` 1.707,
+  taking the AI side from 7 to 8.707 NEAR; the remaining 0.6 NEAR gap is inside the churn band.
 * **Trust**:
   * agent key calls `withdraw` → rejected by the protocol (`MethodNameMismatch`);
   * agent key sets the AI target to 99% → rejected by the vault (`outside the policy band 0..9000bps`);
   * a stranger calls `step` → rejected by the vault (`agent or owner only`).
-* **Exit**: the owner called `exit`; a stranger account then unstaked both sides of the vault.
+* **Usage spike** (the demo moment): with the vault upgraded to v2 in place, we recorded a $0.01 spike on the
+  meter (about 5 days of the testnet budget at once). Runway dropped to zero, the agent flagged an emergency, and
+  it raised the AI target from 9.3 to 10.1 NEAR (90% of the vault, the policy cap) and started unstaking the
+  yield side to fund it. The digest reports it as "Moved 0.801 NEAR toward AI (AI target 9.314 → 10.115) on
+  Monday 2 Nov: runway 0.0d is shorter than the 2.0d it takes to add stake."
+* **Full exit** on `vault-exit`: the owner called `exit`; a stranger account unstaked both sides; after the epoch
+  the stranger withdrew 1.5 NEAR from NEAR AI's staking contract (`withdraw(validator_id)`) and 0.5 NEAR from the
+  yield pool; the owner then withdrew 2.304 NEAR to their own account.
 
 ## Limits, said plainly
 
@@ -144,9 +165,13 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
   organization. Plan B, if so: the owner's own account stakes and approves each move.
 * The yield side is our test pool, not a live validator or liquid staking token. Swapping a LiNEAR position for
   instant top-ups is a stretch goal.
-* No one-off credit purchase in the emergency path yet; the agent flags emergencies and adds stake.
-* While a transaction runs, the vault's balance excludes the gas prepaid for it, so a target's share is computed on
-  a total that is briefly a little low. It errs toward a lower share.
+* Top-ups are paid only from yield earned since v2 tracking began, and the testnet vault's yield side is small,
+  so on testnet the top-up has run in unit tests but not yet on-chain. On testnet, packs are a 0.001 NEAR one-off
+  price on the farm product and the meter credits them at the NEAR price; on mainnet NEAR AI sells credits itself.
+* The agent signs as the vault, so each call's prepaid gas (about 0.45 NEAR for a 450 Tgas staking call, held
+  at a pessimistic price and mostly refunded) is out of the vault's balance while the call runs. The vault counts
+  that held gas as liquid in its own checks (`liquid_in_call`, capped at half the 1 NEAR reserve); before 0.2.1
+  this made full-balance stakes and 90% targets fail on testnet.
 * The agent's function-call key has a 1 NEAR gas allowance; the owner re-adds the key when it runs out.
 
 ## Repository
