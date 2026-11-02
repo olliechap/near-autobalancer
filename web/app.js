@@ -186,7 +186,7 @@ $("withdraw").addEventListener("click", e => {
 });
 $("save-policy").addEventListener("click", () => {
   const p = { ...App.live.state.policy, max_ai_bps: Math.round(App.maxAi * 10000), buffer_days: App.buffer };
-  if ("budget_micro_usd_week" in p) p.budget_micro_usd_week = String(Math.round(App.budget * 1e6));
+  if (budgetOnChain()) p.budget_micro_usd_week = String(Math.round(App.budget * 1e6));
   if (p.min_ai_bps > p.max_ai_bps) p.min_ai_bps = p.max_ai_bps;
   act("Save guard rails", "set_policy", { policy: p });
 });
@@ -194,7 +194,12 @@ function policyDirty() {
   if (App.mode !== "live") return false;
   const p = App.live.state.policy;
   return Math.round(App.maxAi * 10000) !== p.max_ai_bps || App.buffer !== p.buffer_days ||
-    ("budget_micro_usd_week" in p && Math.round(App.budget * 1e6) !== Number(p.budget_micro_usd_week));
+    (budgetOnChain() && Math.round(App.budget * 1e6) !== Number(p.budget_micro_usd_week || 0));
+}
+/** Vault 0.2 and later store the weekly budget in the policy (an optional field, null until first set). */
+function budgetOnChain() {
+  const s = App.live?.state;
+  return !!s && ("budget_micro_usd_week" in s.policy || "yield_earned" in s);
 }
 
 // ================================================================ demo vault
@@ -643,7 +648,7 @@ function renderOwner(m, s) {
   $("owner").hidden = !owner;
   $("rails-save").hidden = !owner;
   renderWho();
-  const hasBudget = "budget_micro_usd_week" in s.policy;
+  const hasBudget = budgetOnChain();
   if (!owner) return;
   if (!App.railsOpened) { App.railsOpened = true; document.querySelector("details.rails").open = true; }
   const dirty = policyDirty();
