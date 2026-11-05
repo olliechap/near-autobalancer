@@ -17,8 +17,9 @@ compute) on its owner's behalf, with every move bounded by an on-chain policy.
   against the agent in 75 seconds.
 * **Dashboard:** [near-autobalancer.vercel.app/app.html](https://near-autobalancer.vercel.app/app.html), a 100,000
   NEAR demo vault, or the live testnet vault `vault.ballast-11012319.testnet`.
-* **Status:** MVP running on NEAR **testnet**. Still to do before the deadline: the mainnet credit check and the
-  demo video ([Status](#status)).
+* **Status:** the full loop runs on NEAR **testnet**. On **mainnet**, a Ballast vault has staked into NEAR AI's
+  real farm ([Live on mainnet](#live-on-mainnet)). Still to do: confirming the credits in the NEAR AI Cloud console,
+  and the demo video ([Status](#status)).
 
 ## For judges: do X, see Y
 
@@ -121,6 +122,23 @@ NEAR). At NEAR AI's rate that is **c = $0.000329 per NEAR per day**, whatever th
 The simulator picked the defaults: a 7-day buffer avoided throttling too, but parked about 10 points more of the
 vault in credits (`node agent/scripts/sweep.ts` reruns the sweep).
 
+## Live on mainnet
+
+The concept's day-1 risk was whether a contract account can stake into NEAR AI's farm at all. It can, on mainnet:
+
+* The vault `ballast-vault-mw46qfjz.near`, on its own `.near` account, registered with NEAR AI's staking contract
+  `stake.dao`. It then staked 1.3 NEAR into the "NEAR AI Cloud Credits" farm (product `prod_33Kp14MGUJa2QA`,
+  validator `nearai.pool.near`, price "100 $NEAR x 1 month = $1 credit"). It used the normal `rebalance` + `StakeAi`
+  path ([tx](https://nearblocks.io/txns/CvY15vdJzaUwohMXTiF4XL25b1aqsUTuNaXv2AsW9mkM)).
+* `get_farm_position` on `stake.dao` shows the 1.3 NEAR, with reward units accruing.
+* Mainnet's farm `reward_rate` is `7605141075366948`, about **$0.000657 per NEAR per day**, twice the testnet
+  config. The agent takes the rate from the deployment file (`farmRewardRate`), so on mainnet a vault needs about
+  half the stake for the same budget.
+* Ids are in `agent/deployments/mainnet.json`. The script is `agent/scripts/mainnet-proof.ts` (`setup`, `status`).
+
+Still open: whether NEAR AI Cloud credits a contract account's farm position to an organization. Checking that
+needs a sign-in to cloud.near.ai.
+
 ## Live on testnet
 
 The full stack is deployed under `ballast-11012319.testnet` (ids in `agent/deployments/testnet.json`):
@@ -191,9 +209,10 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
 
 ## Limits, said plainly
 
-* Testnet only so far. The mainnet proof (a small stake into NEAR AI's real farm from a sub-account, with credits
-  showing in the NEAR AI console) is still to do, and NEAR AI's docs say contract accounts can't yet bind to an
-  organization. Plan B, if so: the owner's own account stakes and approves each move.
+* Mainnet so far is one vault staking into NEAR AI's real farm; the full agent loop has run on testnet only.
+  NEAR AI's docs say contract accounts can't yet bind to an organization, and we haven't yet seen the vault's
+  credits in the NEAR AI Cloud console. Plan B, if they don't show: the owner's own account stakes and approves
+  each move.
 * The yield side is our test pool, not a live validator or liquid staking token. Swapping a LiNEAR position for
   instant top-ups is a stretch goal.
 * Top-ups are paid only from yield earned since v2 tracking began, so a small vault can only afford one once its
@@ -249,8 +268,9 @@ used as they are:
 
 | Done | Still to do |
 |---|---|
-| Vault contract v2 on testnet, upgraded in place from v1 | Mainnet check: a small stake into NEAR AI's real farm from a contract sub-account, with credits showing in the NEAR AI console |
-| Vault staking into NEAR AI's real `staking-contract` from a contract sub-account (testnet) | Demo video |
+| Vault contract v2 on testnet, upgraded in place from v1 | NEAR AI Cloud console: the mainnet vault's credits showing for an organization |
+| Mainnet: a vault on a contract account staked 1.3 NEAR into NEAR AI's real farm (`stake.dao`) | Demo video |
+| Vault staking into NEAR AI's `staking-contract` from a contract sub-account (testnet) | |
 | Agent loop: forecast, rebalance across epochs, emergency path, on-chain budget, weekly digest | A real wallet-signed transaction from the dashboard |
 | Trust checks and a full exit by a stranger account, on testnet | |
 | Emergency `BuyCredits` top-up on testnet, paid from earned yield | |
@@ -262,8 +282,8 @@ used as they are:
 contracts/vault    vault contract + unit tests
 contracts/pool     testnet staking pool + unit tests
 agent/src          policy, simulator, live agent, testnet credit meter, NEAR helpers
-agent/scripts      deploy, upgrade, trust demo, exit demo, parameter sweep
-agent/deployments  testnet account ids
+agent/scripts      deploy, upgrade, mainnet proof, trust demo, exit demo, parameter sweep
+agent/deployments  testnet and mainnet account ids
 web/               website, game and dashboard (static, deployed on Vercel)
 .github/workflows  CI: contract tests, wasm build, agent tests, simulator
 ```
