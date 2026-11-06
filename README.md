@@ -18,6 +18,8 @@ compute) on its owner's behalf, with every move bounded by an on-chain policy.
 * **Dashboard:** [near-ballast.vercel.app/app.html](https://near-ballast.vercel.app/app.html), a 100,000
   NEAR demo vault, the live testnet vault `vault.ballast-11012319.testnet`, or the mainnet vault
   `ballast-vault-mw46qfjz.near`.
+* **Demo video:** [the demo post on X](https://x.com/olliechapman/status/2118541780178334141) (2:16): the game,
+  the dashboard and a live rebalance.
 * **Status:** the full loop runs on NEAR **testnet**. On **mainnet**, a Ballast vault has staked into NEAR AI's
   real farm, NEAR AI Cloud shows its credits, and the owner has signed a policy change from the dashboard with a
   wallet ([Live on mainnet](#live-on-mainnet)).
