@@ -1,0 +1,9 @@
+{
+  "network": "mainnet",
+  "owner": "190f625fee0c3f511d843534463fd3bfbadc7799e8c0a9f8e3ec815742828202",
+  "vault": "ballast-vault-mw46qfjz.near",
+  "stakingContract": "stake.dao",
+  "productId": "prod_33Kp14MGUJa2QA",
+  "aiValidator": "nearai.pool.near",
+  "yieldPool": "astro-stakers.poolv1.near"
+}
