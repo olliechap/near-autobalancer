@@ -18,8 +18,6 @@ compute) on its owner's behalf, with every move bounded by an on-chain policy.
 * **Dashboard:** [near-autobalancer.vercel.app/app.html](https://near-autobalancer.vercel.app/app.html), a 100,000
   NEAR demo vault, the live testnet vault `vault.ballast-11012319.testnet`, or the mainnet vault
   `ballast-vault-mw46qfjz.near`.
-* **Demo video:** [docs/ballast-demo.mp4](docs/ballast-demo.mp4) (2:16): the game, the dashboard and a live
-  rebalance.
 * **Status:** the full loop runs on NEAR **testnet**. On **mainnet**, a Ballast vault has staked into NEAR AI's
   real farm, NEAR AI Cloud shows its credits, and the owner has signed a policy change from the dashboard with a
   wallet ([Live on mainnet](#live-on-mainnet)).
@@ -316,7 +314,7 @@ agent/src          policy, simulator, live agent, testnet credit meter, NEAR hel
 agent/scripts      deploy, upgrade, mainnet proof, trust demo, exit demo, parameter sweep
 agent/deployments  testnet and mainnet account ids
 web/               website, game and dashboard (static, deployed on Vercel)
-docs/              screenshots and the demo video
+docs/              screenshots
 .github/workflows  CI: contract tests, wasm build, agent tests, simulator
 ```
 
