@@ -5,7 +5,7 @@ import path from "node:path";
 
 const root = import.meta.dirname;
 const port = Number(process.env.PORT ?? 5310);
-const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".md": "text/plain" };
+const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".md": "text/plain" };
 http
   .createServer((req, res) => {
     const url = new URL(req.url, "http://x");
