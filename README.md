@@ -16,10 +16,15 @@ compute) on its owner's behalf, with every move bounded by an on-chain policy.
 * **Website:** [near-autobalancer.vercel.app](https://near-autobalancer.vercel.app/), a harbour game you can play
   against the agent in 75 seconds.
 * **Dashboard:** [near-autobalancer.vercel.app/app.html](https://near-autobalancer.vercel.app/app.html), a 100,000
-  NEAR demo vault, or the live testnet vault `vault.ballast-11012319.testnet`.
+  NEAR demo vault, the live testnet vault `vault.ballast-11012319.testnet`, or the mainnet vault
+  `ballast-vault-mw46qfjz.near`.
+* **Demo video:** [docs/ballast-demo.mp4](docs/ballast-demo.mp4) (2:16): the game, the dashboard and a live
+  rebalance.
 * **Status:** the full loop runs on NEAR **testnet**. On **mainnet**, a Ballast vault has staked into NEAR AI's
-  real farm, and NEAR AI Cloud shows its credits ([Live on mainnet](#live-on-mainnet)). Still to do: the demo
-  video ([Status](#status)).
+  real farm, NEAR AI Cloud shows its credits, and the owner has signed a policy change from the dashboard with a
+  wallet ([Live on mainnet](#live-on-mainnet)).
+* **Goal:** get this, or a feature like it, built into near.com, so anyone who stakes NEAR can point part of it at
+  their AI usage ([Goal](#goal-built-into-nearcom)).
 
 ## For judges: do X, see Y
 
@@ -30,6 +35,7 @@ compute) on its owner's behalf, with every move bounded by an on-chain policy.
 | `node src/simulate.ts` (in `agent/`) | The table below: Ballast 0 throttled hours, set-and-forget 116, all-in AI earns 0 NEAR |
 | `node src/agent.ts status` (in `agent/`) | The live testnet vault's balances, farm position and the agent's next move, read over RPC with no keys |
 | Open the [dashboard](https://near-autobalancer.vercel.app/app.html), press **Watch** (the testnet vault id is filled in) | The same vault's split, target and next step in the browser |
+| On the same page, watch `ballast-vault-mw46qfjz.near` | The mainnet vault, read from mainnet RPC, with what NEAR AI's farm has paid it ("farm paid") |
 | Open the [dashboard](https://near-autobalancer.vercel.app/app.html), press **Open the demo vault**, pick "ask me first" and press play | The month pauses on day 11 with "Move 19,378 NEAR toward NEAR AI" for you to approve |
 | Open the [website](https://near-autobalancer.vercel.app/) and press **A** | The agent plays the month and the end card compares it with set-and-forget and all-in AI |
 
@@ -243,10 +249,11 @@ is deployed on Vercel at [near-autobalancer.vercel.app](https://near-autobalance
 * **Dashboard** (`app.html`): weekly AI budget, autopilot or "ask me first", guard rails, the stake split against
   the target, a credit forecast, and the rebalance history. The demo vault runs the agent's own policy code in the
   browser (`web/lib` is generated from `agent/src`). A testnet vault is read straight from the chain.
-* **Wallet sign-in** ([PR #7](https://github.com/olliechap/near-autobalancer/pull/7)): connect MyNearWallet, Meteor
-  or HERE through NEAR Wallet Selector. The vault's owner can then approve the next move (`step`), save the budget
-  and guard rails on-chain (`set_policy`), deposit, exit and withdraw. Tested with a stubbed wallet; a real signed
-  transaction from a wallet is still to do.
+* **Wallet sign-in:** connect MyNearWallet, Meteor or HERE through NEAR Wallet Selector, or HOT Wallet's browser
+  extension on mainnet. The vault's owner can then approve the next move (`step`), save the budget and guard rails
+  on-chain (`set_policy`), deposit, exit and withdraw, each signed in the wallet. On mainnet the owner signed in with
+  HOT and saved a weekly budget from the dashboard
+  ([`set_policy` tx](https://nearblocks.io/txns/EfSW9AK2dyd4vY8C38xWEQRrFQugTf3EPFFmsQb1Nv1c)).
 
 ## NEAR tools used
 
@@ -273,15 +280,33 @@ used as they are:
 
 ## Status
 
-| Done | Still to do |
+Everything planned for the hackathon has run:
+
+| Done | Where |
 |---|---|
-| Vault contract v2 on testnet, upgraded in place from v1 | Demo video |
-| Mainnet: a vault on a contract account staked 1.3 NEAR into NEAR AI's real farm (`stake.dao`), and NEAR AI Cloud shows it as farmed credits | |
-| Vault staking into NEAR AI's `staking-contract` from a contract sub-account (testnet) | |
-| Agent loop: forecast, rebalance across epochs, emergency path, on-chain budget, weekly digest | A real wallet-signed transaction from the dashboard |
-| Trust checks and a full exit by a stranger account, on testnet | |
-| Emergency `BuyCredits` top-up on testnet, paid from earned yield | |
-| Simulator, CI, website and dashboard on Vercel | |
+| Vault contract v2, upgraded in place from v1 | testnet |
+| A vault on a contract account staked 1.3 NEAR into NEAR AI's real farm (`stake.dao`), and NEAR AI Cloud shows it as farmed credits | mainnet |
+| Owner signed a `set_policy` from the dashboard with HOT Wallet | mainnet |
+| Agent loop: forecast, rebalance across epochs, emergency path, on-chain budget, weekly digest | testnet |
+| Trust checks, and a full exit by a stranger account | testnet |
+| Emergency `BuyCredits` top-up, paid from earned yield | testnet |
+| Simulator, CI, website, dashboard on Vercel, demo video | |
+
+## Goal: built into near.com
+
+Ballast is a separate vault today. The goal is for this, or a feature like it, to live where people already stake:
+near.com. Staking there would ask one more question, "How much do you spend on AI each week?", and keep just
+enough of the stake on NEAR AI's farm to cover it, with the rest earning ordinary yield.
+
+What that would take:
+
+* **A staking option, not a new app.** The vault already uses the standard staking-pool interface on the yield
+  side and NEAR AI's own `staking-contract` on the AI side, so near.com could offer it next to its existing pools.
+* **Credits on the user's own NEAR AI account.** NEAR AI Cloud already credits a bound contract account (see
+  [Live on mainnet](#live-on-mainnet)). Built in, the binding would happen at sign-up, not by hand.
+* **Liquid staking for the yield side**, such as LiNEAR, so a usage spike can be covered without waiting 4 epochs.
+* **The same limits:** the agent can only move stake between the two sides, inside a band the user sets, and the
+  user can always exit.
 
 ## Repository
 
@@ -292,7 +317,7 @@ agent/src          policy, simulator, live agent, testnet credit meter, NEAR hel
 agent/scripts      deploy, upgrade, mainnet proof, trust demo, exit demo, parameter sweep
 agent/deployments  testnet and mainnet account ids
 web/               website, game and dashboard (static, deployed on Vercel)
-docs/              screenshots
+docs/              screenshots and the demo video
 .github/workflows  CI: contract tests, wasm build, agent tests, simulator
 ```
 
