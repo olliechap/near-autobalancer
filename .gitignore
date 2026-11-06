@@ -1,5 +1,21 @@
+# Build output
 /target
 node_modules/
+
+# Agent runtime state (tick log, meter, digests)
 agent/state/
+
+# Keys and credentials: never commit these.
+# The agent keeps keys in ~/.near-credentials-ballast (or $BALLAST_CREDENTIALS), outside the repo.
 *.key.json
 .near-credentials*
+.env
+.env.*
+!.env.example
+*.pem
+
+# Editor and OS files
+.DS_Store
+.vscode/
+.idea/
+*.log
