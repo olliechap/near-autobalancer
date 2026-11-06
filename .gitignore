@@ -19,3 +19,7 @@ agent/state/
 .vscode/
 .idea/
 *.log
+
+# Large media: host videos elsewhere (e.g. a post or release), not in git
+*.mp4
+*.mov
