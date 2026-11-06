@@ -1,13 +1,13 @@
 // Ballast dashboard. Two sources behind one screen:
 //   demo  — a 100,000 NEAR vault simulated in the browser with VaultSim (the agent's own policy code),
 //           so the budget, guard rails and approvals all respond live;
-//   live  — a real vault on NEAR testnet, read with the RPC `get_state` view. Signed in with a NEAR wallet as
+//   live  — a real vault on NEAR testnet or mainnet, read with the RPC `get_state` view. Signed in with a NEAR wallet as
 //           the vault's owner, you approve moves, change guard rails, deposit, exit and withdraw from here;
 //           otherwise it is read-only and shows the owner's command line instead.
 import { defaultScenario } from "./lib/sim.js";
 import { VaultSim } from "./lib/vault-sim.js";
 import { nextAction, creditRateFromFarm } from "./lib/policy.js";
-import { viewVault, yoctoToNear, explorerUrl, TESTNET } from "./lib/near.js";
+import { viewVault, viewFarm, yoctoToNear, explorerUrl, netFor, TESTNET } from "./lib/near.js";
 import * as wallet from "./lib/wallet.js";
 
 const $ = id => document.getElementById(id);
@@ -24,11 +24,12 @@ const App = {
   sc: null, sim: null, compare: null,
   playing: false, speed: 16, clock: 0, lastFrame: 0, dirty: true,
   live: null, liveTimer: 0,
+  net: TESTNET, // the live vault's network
   account: null, // signed-in NEAR account, if any
   confirm: null, // an owner action waiting for its second click
 };
 const ONE_YOCTO = "1";
-const txUrl = h => `${TESTNET.explorer}/txns/${h}`;
+const txUrl = h => `${App.net.explorer}/txns/${h}`;
 
 // ================================================================ login
 function session(v) {
@@ -140,7 +141,7 @@ async function afterSignIn(acc) {
     enterLive(id, await viewVault(id));
   } catch {
     const err = $("connect-error");
-    err.innerHTML = `Signed in as <b>${escapeHtml(acc)}</b>, but there is no Ballast vault at <code>${escapeHtml(id)}</code> on testnet yet. Watch any vault below, or open the demo.`;
+    err.innerHTML = `Signed in as <b>${escapeHtml(acc)}</b>, but there is no Ballast vault at <code>${escapeHtml(id)}</code> on ${netFor(acc).id} yet. Watch any vault below, or open the demo.`;
     err.hidden = false;
   }
 }
@@ -310,8 +311,16 @@ async function enterLive(id, state) {
   // a testnet vault is tiny: start the budget at what the agent last reported, not $100
   const burn = state.last_report ? Number(state.last_report.burn_micro_usd_per_day) / 1e6 : 0;
   if (burn > 0) { App.budget = +(burn * 7).toPrecision(2); $("budget").value = App.budget; $("budget").step = "any"; }
+  else {
+    // no usage reported yet: start at what the vault's current AI stake already covers
+    const covered = creditRateFromFarm(netFor(id).farmRewardRate) * yoctoToNear(state.ai_staked) * 7;
+    if (covered > 0) { App.budget = +covered.toPrecision(2); $("budget").value = App.budget; $("budget").step = "any"; }
+  }
   session({ mode: "live", id });
-  App.live = { id, state, read: new Date() };
+  App.live = { id, state, read: new Date(), farm: null };
+  App.net = netFor(id);
+  wallet.setNetwork(App.net.id);
+  viewFarm(id, state).then(f => { if (App.live?.id === id) { App.live.farm = f; App.dirty = true; } }).catch(() => {});
   // guard rails start from what the vault has stored
   App.maxAi = state.policy.max_ai_bps / 10000;
   App.buffer = state.policy.buffer_days;
@@ -321,7 +330,7 @@ async function enterLive(id, state) {
     App.budget = Number(state.policy.budget_micro_usd_week) / 1e6; $("budget").value = App.budget;
   }
   $("vault-name").textContent = id;
-  $("mode-chip").textContent = "testnet · live";
+  $("mode-chip").textContent = `${App.net.id} · live`;
   $("mode-chip").className = "chip live";
   showDash();
   App.dirty = true;
@@ -331,14 +340,17 @@ async function enterLive(id, state) {
 }
 async function refreshLive() {
   if (App.mode !== "live" || !App.live) return;
-  try { App.live.state = await viewVault(App.live.id); App.live.read = new Date(); App.live.error = null; }
+  try {
+    App.live.state = await viewVault(App.live.id); App.live.read = new Date(); App.live.error = null;
+    App.live.farm = await viewFarm(App.live.id, App.live.state).catch(() => App.live.farm);
+  }
   catch (x) { App.live.error = x.message; }
   App.dirty = true;
 }
 function liveModel() {
   const s = App.live.state;
   const n = k => yoctoToNear(s[k]);
-  const c = creditRateFromFarm(TESTNET.farmRewardRate);
+  const c = creditRateFromFarm(App.net.farmRewardRate);
   const rep = s.last_report;
   const burn = rep ? Number(rep.burn_micro_usd_per_day) / 1e6 : App.budget / 7;
   const credits = rep ? Number(rep.credit_balance_micro_usd) / 1e6 : 0;
@@ -346,6 +358,8 @@ function liveModel() {
   const net = burn - c * ai;
   return {
     total, ai, yld: n("yield_staked"), flight: n("ai_unstaking") + n("yield_unstaking") + n("ai_withdrawable"), liquid: n("liquid"),
+    // credits NEAR AI's farm has paid this vault so far ($1 per reward unit)
+    farmEarned: App.live.farm ? Number(BigInt(App.live.farm.total_earned_reward_units || "0") / 10n ** 12n) / 1e12 : null,
     target: n("target_ai"), c, burn, credits, runway: net <= 0 ? Infinity : credits / net, report: rep,
     books: {
       liquid: n("liquid"), aiStaked: ai, aiUnstaking: n("ai_unstaking"), aiWithdrawable: n("ai_withdrawable"),
@@ -577,10 +591,11 @@ function renderLive() {
     stat("on NEAR AI", pct(s.ai_bps / 10000), `target ${pct(s.target_ai_bps / 10000)}`) +
     stat("AI credits", fmtUsd(m.credits), isFinite(m.runway) ? `${m.runway.toFixed(1)} days left` : "growing", m.runway < 1) +
     stat("forecast burn", fmtUsd(m.burn), "a day") +
+    (m.farmEarned != null ? stat("farm paid", fmtUsd(m.farmEarned), "in credits, so far") : "") +
     // vault 0.2.1 and later
     (s.yield_earned != null ? stat("yield earned", fmtNear(yoctoToNear(s.yield_earned)), "NEAR, all time") : "") +
     (s.topup_available != null ? stat("top-up left", fmtNear(yoctoToNear(s.topup_available)), "NEAR this window") : "");
-  $("live-note").textContent = `Read from ${TESTNET.rpc.replace("https://", "")} at ${L.read.toLocaleTimeString()}${L.error ? ` · last refresh failed: ${L.error}` : ""} · refreshes every 15s${s.exiting ? " · vault is exiting" : ""}${s.busy ? " · a step is in progress" : ""}`;
+  $("live-note").textContent = `Read from ${App.net.rpc.replace("https://", "")} at ${L.read.toLocaleTimeString()}${L.error ? ` · last refresh failed: ${L.error}` : ""} · refreshes every 15s${s.exiting ? " · vault is exiting" : ""}${s.busy ? " · a step is in progress" : ""}`;
   renderPlan({ total: m.total, c: m.c, nearUsd: 2.5, apy: 0.045 * 0.95, maxAi: s.policy.max_ai_bps / 10000, burn: m.burn });
   renderSplit({ ai: m.ai, flight: m.flight, yld: m.yld, liquid: m.liquid, target: m.target, total: m.total });
 
@@ -699,6 +714,8 @@ if (q.has("transactionHashes") || q.has("errorCode")) {
   try { sessionStorage.removeItem("ballast:pending"); } catch { /* fine */ }
 }
 if (wallet.probablySignedIn()) {
+  const n = saved?.mode === "live" && saved.id ? netFor(saved.id).id : wallet.signedInNetwork();
+  if (n) wallet.setNetwork(n);
   wallet.accountId().then(acc => {
     if (!acc) return;
     App.account = acc;
