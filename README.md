@@ -18,8 +18,8 @@ compute) on its owner's behalf, with every move bounded by an on-chain policy.
 * **Dashboard:** [near-autobalancer.vercel.app/app.html](https://near-autobalancer.vercel.app/app.html), a 100,000
   NEAR demo vault, or the live testnet vault `vault.ballast-11012319.testnet`.
 * **Status:** the full loop runs on NEAR **testnet**. On **mainnet**, a Ballast vault has staked into NEAR AI's
-  real farm ([Live on mainnet](#live-on-mainnet)). Still to do: confirming the credits in the NEAR AI Cloud console,
-  and the demo video ([Status](#status)).
+  real farm, and NEAR AI Cloud shows its credits ([Live on mainnet](#live-on-mainnet)). Still to do: the demo
+  video ([Status](#status)).
 
 ## For judges: do X, see Y
 
@@ -136,8 +136,15 @@ The concept's day-1 risk was whether a contract account can stake into NEAR AI's
   half the stake for the same budget.
 * Ids are in `agent/deployments/mainnet.json`. The script is `agent/scripts/mainnet-proof.ts` (`setup`, `status`).
 
-Still open: whether NEAR AI Cloud credits a contract account's farm position to an organization. Checking that
-needs a sign-in to cloud.near.ai.
+NEAR AI Cloud credits the vault directly. The vault account signed in to cloud.near.ai with a NEAR wallet and was
+bound as its organization's staking wallet. Cloud now lists the 1.3 NEAR stake as **Farmed** credits under
+"Credits remaining": $0.0000127 so far, at $0.03 a month.
+
+![NEAR AI Cloud showing the vault's 1.3 NEAR stake as farmed credits](docs/nearai-cloud-farmed-credits.jpg)
+
+Binding is permanent: each organization has one funding wallet, and an organization with a bound wallet can't be
+deleted. To sign in and bind, the vault account needs a full-access key, which the owner holds. The agent's key
+stays limited to `rebalance`, `step` and `sync`.
 
 ## Live on testnet
 
@@ -209,10 +216,10 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
 
 ## Limits, said plainly
 
-* Mainnet so far is one vault staking into NEAR AI's real farm; the full agent loop has run on testnet only.
-  NEAR AI's docs say contract accounts can't yet bind to an organization, and we haven't yet seen the vault's
-  credits in the NEAR AI Cloud console. Plan B, if they don't show: the owner's own account stakes and approves
-  each move.
+* Mainnet so far is one vault staking into NEAR AI's real farm, with its credits showing in NEAR AI Cloud. The
+  full agent loop has run on testnet only.
+* NEAR AI Cloud credits a contract-account vault directly once the vault is bound to an organization. The vault
+  needs a full-access key to sign in and bind, and the binding is permanent.
 * The yield side is our test pool, not a live validator or liquid staking token. Swapping a LiNEAR position for
   instant top-ups is a stretch goal.
 * Top-ups are paid only from yield earned since v2 tracking began, so a small vault can only afford one once its
@@ -268,8 +275,8 @@ used as they are:
 
 | Done | Still to do |
 |---|---|
-| Vault contract v2 on testnet, upgraded in place from v1 | NEAR AI Cloud console: the mainnet vault's credits showing for an organization |
-| Mainnet: a vault on a contract account staked 1.3 NEAR into NEAR AI's real farm (`stake.dao`) | Demo video |
+| Vault contract v2 on testnet, upgraded in place from v1 | Demo video |
+| Mainnet: a vault on a contract account staked 1.3 NEAR into NEAR AI's real farm (`stake.dao`), and NEAR AI Cloud shows it as farmed credits | |
 | Vault staking into NEAR AI's `staking-contract` from a contract sub-account (testnet) | |
 | Agent loop: forecast, rebalance across epochs, emergency path, on-chain budget, weekly digest | A real wallet-signed transaction from the dashboard |
 | Trust checks and a full exit by a stranger account, on testnet | |
@@ -285,6 +292,7 @@ agent/src          policy, simulator, live agent, testnet credit meter, NEAR hel
 agent/scripts      deploy, upgrade, mainnet proof, trust demo, exit demo, parameter sweep
 agent/deployments  testnet and mainnet account ids
 web/               website, game and dashboard (static, deployed on Vercel)
+docs/              screenshots
 .github/workflows  CI: contract tests, wasm build, agent tests, simulator
 ```
 
