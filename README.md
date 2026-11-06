@@ -13,9 +13,9 @@ the split only when it drifts, inside limits you set on-chain. It can never send
 Built at **NEAR HACKATHON** for the **Agent Economy** track: an agent that earns (staking yield) and spends (AI
 compute) on its owner's behalf, with every move bounded by an on-chain policy.
 
-* **Website:** [near-autobalancer.vercel.app](https://near-autobalancer.vercel.app/), a harbour game you can play
+* **Website:** [near-ballast.vercel.app](https://near-ballast.vercel.app/), a harbour game you can play
   against the agent in 75 seconds.
-* **Dashboard:** [near-autobalancer.vercel.app/app.html](https://near-autobalancer.vercel.app/app.html), a 100,000
+* **Dashboard:** [near-ballast.vercel.app/app.html](https://near-ballast.vercel.app/app.html), a 100,000
   NEAR demo vault, the live testnet vault `vault.ballast-11012319.testnet`, or the mainnet vault
   `ballast-vault-mw46qfjz.near`.
 * **Status:** the full loop runs on NEAR **testnet**. On **mainnet**, a Ballast vault has staked into NEAR AI's
@@ -32,10 +32,10 @@ compute) on its owner's behalf, with every move bounded by an on-chain policy.
 | `cd agent && npm install && npm test` | 15 policy, simulator and digest tests pass |
 | `node src/simulate.ts` (in `agent/`) | The table below: Ballast 0 throttled hours, set-and-forget 116, all-in AI earns 0 NEAR |
 | `node src/agent.ts status` (in `agent/`) | The live testnet vault's balances, farm position and the agent's next move, read over RPC with no keys |
-| Open the [dashboard](https://near-autobalancer.vercel.app/app.html), press **Watch** (the testnet vault id is filled in) | The same vault's split, target and next step in the browser |
+| Open the [dashboard](https://near-ballast.vercel.app/app.html), press **Watch** (the testnet vault id is filled in) | The same vault's split, target and next step in the browser |
 | On the same page, watch `ballast-vault-mw46qfjz.near` | The mainnet vault, read from mainnet RPC, with what NEAR AI's farm has paid it ("farm paid") |
-| Open the [dashboard](https://near-autobalancer.vercel.app/app.html), press **Open the demo vault**, pick "ask me first" and press play | The month pauses on day 11 with "Move 19,378 NEAR toward NEAR AI" for you to approve |
-| Open the [website](https://near-autobalancer.vercel.app/) and press **A** | The agent plays the month and the end card compares it with set-and-forget and all-in AI |
+| Open the [dashboard](https://near-ballast.vercel.app/app.html), press **Open the demo vault**, pick "ask me first" and press play | The month pauses on day 11 with "Move 19,378 NEAR toward NEAR AI" for you to approve |
+| Open the [website](https://near-ballast.vercel.app/) and press **A** | The agent plays the month and the end card compares it with set-and-forget and all-in AI |
 
 CI runs the first three rows on every pull request (`.github/workflows`).
 
@@ -238,7 +238,7 @@ are the farm's on-chain `total_earned_reward_units` × $1 per unit, and credits 
 ## Use it in the browser
 
 `web/` is plain HTML and JavaScript with no build step (`node web/serve.mjs`, then open http://127.0.0.1:5310/). It
-is deployed on Vercel at [near-autobalancer.vercel.app](https://near-autobalancer.vercel.app/). See
+is deployed on Vercel at [near-ballast.vercel.app](https://near-ballast.vercel.app/). See
 [`web/README.md`](web/README.md).
 
 * **Keep the light on** (`index.html`): a month of NEAR AI usage in 75 seconds. Crates by the lighthouse are staked
